@@ -1,0 +1,93 @@
+name: Update COT data and deploy
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+  schedule:
+    # Avoid the busiest top-of-hour scheduling times. Holiday releases are
+    # picked up by the daily check. Native timezone support handles DST.
+    - cron: '47 15,17 * * 5'
+      timezone: America/New_York
+    - cron: '17 20 * * *'
+      timezone: America/New_York
+
+permissions:
+  contents: read
+
+concurrency:
+  group: cot-update-and-pages
+  cancel-in-progress: false
+
+jobs:
+  update:
+    if: github.repository == 'bnakib/cot-dashboard'
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    permissions:
+      contents: write
+    outputs:
+      commit: ${{ steps.commit.outputs.sha }}
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: main
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.12'
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '24'
+      - name: Test data processing and chart calculations
+        run: |
+          python -m unittest discover -s tests -v
+          node --test tests/chart.test.mjs
+          node --check site/app.mjs
+      - name: Download and validate official CFTC history
+        run: python scripts/update_data.py
+      - name: Save changed data
+        id: commit
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add site/data
+          if ! git diff --cached --quiet; then
+            git commit -m "Update official COT history"
+            git push origin HEAD:main
+          fi
+          echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+      - name: Summarize imported history
+        run: |
+          python - <<'PY'
+          import json, os
+          from pathlib import Path
+          index = json.loads(Path('site/data/index.json').read_text())
+          with open(os.environ['GITHUB_STEP_SUMMARY'], 'a') as summary:
+              summary.write(f"## Official COT history\n\n{len(index['markets'])} markets; {index['recordCount']:,} observations.\n\nLatest position date: **{index['latestDate']}**.\n\nSource: {index['sourceUrl']}\n\nIf deployment needs setup, open Settings → Pages and choose **GitHub Actions**.\n")
+          PY
+
+  deploy:
+    needs: update
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ needs.update.outputs.commit }}
+          persist-credentials: false
+      - name: Configure Pages
+        uses: actions/configure-pages@v5
+      - name: Package dashboard
+        uses: actions/upload-pages-artifact@v4
+        with:
+          path: site
+      - name: Publish dashboard
+        id: deployment
+        uses: actions/deploy-pages@v4
