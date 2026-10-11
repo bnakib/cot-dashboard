@@ -1,8 +1,8 @@
 import {marketInfo, matchingMarkets, QUICK_MARKETS} from './markets.mjs';
 export const GROUPS = [
-  {id:'large', label:'Large speculators', official:'Non-commercial', color:'#64d6c4'},
-  {id:'small', label:'Small speculators', official:'Non-reportable', color:'#b6a0ff'},
-  {id:'commercial', label:'Commercials', official:'Commercial', color:'#f1b66b'}
+  {id:'large', label:'Large speculators', official:'Non-commercial', color:'#7fa6d6'},
+  {id:'small', label:'Small speculators', official:'Non-reportable', color:'#d1bd78'},
+  {id:'commercial', label:'Commercials', official:'Commercial', color:'#cf8585'}
 ];
 export function netPercent(record, group) { return record.openInterest ? record[group].net / record.openInterest * 100 : null; }
 export function chartValue(record, previous, group, unit, changes=false) {
