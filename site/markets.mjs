@@ -83,3 +83,12 @@ export function matchingMarkets(index,{query='',category='all',mainOnly=true,act
     return Number(exactY)-Number(exactX)||Number(Boolean(y.ticker))-Number(Boolean(x.ticker))||x.label.localeCompare(y.label);
   });
 }
+export function overviewMarkets(index,{query='',mainOnly=true,lookback=52}={}) {
+  const markets=matchingMarkets(index,{query,mainOnly,activeOnly:false});
+  if(!mainOnly)return markets;
+  const commercial=market=>{
+    const value=market.latestIndices?.[lookback]?.commercial;
+    return Number.isFinite(value)?value:-Infinity;
+  };
+  return markets.sort((a,b)=>commercial(b)-commercial(a)||marketInfo(a).label.localeCompare(marketInfo(b).label));
+}
