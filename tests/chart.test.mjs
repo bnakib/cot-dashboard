@@ -23,8 +23,8 @@ test('main futures rank by the selected Commercials index, with zero before unav
     market('084691',null,20),market('075651',undefined,10),market('13874+',100,100)
   ]};
   const original=index.markets.map(m=>m.code);
-  assert.deepEqual(overviewMarkets(index).map(m=>m.code),['067651','13874A','209742','088691','075651','084691']);
-  assert.deepEqual(overviewMarkets(index,{lookback:26}).map(m=>m.code),['088691','209742','084691','075651','067651','13874A']);
+  assert.deepEqual(overviewMarkets(index).map(m=>m.code),['088691','209742','084691','075651','067651','13874A']);
+  assert.deepEqual(overviewMarkets(index,{lookback:52}).map(m=>m.code),['067651','13874A','209742','088691','075651','084691']);
   assert.deepEqual(overviewMarkets(index,{query:'gc'}).map(m=>m.code),['088691']);
   assert.deepEqual(overviewMarkets(index,{mainOnly:false}).map(m=>m.code),matchingMarkets(index,{mainOnly:false,activeOnly:false}).map(m=>m.code));
   assert.deepEqual(index.markets.map(m=>m.code),original);

@@ -1,11 +1,11 @@
-import {marketInfo, matchingMarkets, overviewMarkets, QUICK_MARKETS} from './markets.mjs';
+import {marketInfo, matchingMarkets, overviewMarkets, QUICK_MARKETS, SIX_MONTH_LOOKBACK} from './markets.mjs';
 export const GROUPS = [
   {id:'large', label:'Large speculators', official:'Non-commercial', color:'#7fa6d6'},
   {id:'small', label:'Small speculators', official:'Non-reportable', color:'#d1bd78'},
   {id:'commercial', label:'Commercials', official:'Commercial', color:'#cf8585'}
 ];
 export function netPercent(record, group) { return record.openInterest ? record[group].net / record.openInterest * 100 : null; }
-export function cotIndexSeries(records, lookback=52) {
+export function cotIndexSeries(records, lookback=SIX_MONTH_LOOKBACK) {
   if (!Number.isInteger(lookback)||lookback<2)throw new RangeError('COT index lookback must be at least two reports');
   const series=new Map();
   records.forEach((record,i)=>{
@@ -72,7 +72,7 @@ export function csvForMarket(market) {
 
 if (typeof document !== 'undefined') {
   const $ = id => document.getElementById(id);
-  const state = {index:null, market:null, code:null, date:null, range:'3m', unit:'index', lookback:52, indexValues:new Map(), visible:new Set(GROUPS.map(g=>g.id)), cache:new Map(), request:0};
+  const state = {index:null, market:null, code:null, date:null, range:'3m', unit:'index', lookback:SIX_MONTH_LOOKBACK, indexValues:new Map(), visible:new Set(GROUPS.map(g=>g.id)), cache:new Map(), request:0};
   const fmt = new Intl.NumberFormat('en-US');
   const signed = n => n == null ? '—' : (n>0?'+':n<0?'−':'')+fmt.format(Math.abs(n));
   const cls = n => n>0?'up':n<0?'down':'neutral';
@@ -107,15 +107,15 @@ if (typeof document !== 'undefined') {
     if(wanted.code!==state.code||!state.market||$('dashboard').hidden)loadMarket(wanted.code);
   }
   function renderQuickMarkets() {
-    $('quickMarketDate').textContent=`Latest Commercials COT index · ${state.lookback}-report lookback · Latest dataset: ${prettyDate(state.index.latestDate)}`;
+    $('quickMarketDate').textContent=`Latest Commercials COT index · 6-month lookback (${SIX_MONTH_LOOKBACK} reports) · Latest dataset: ${prettyDate(state.index.latestDate)}`;
     $('quickMarkets').innerHTML=QUICK_MARKETS.map(code=>{
       const m=state.index.markets.find(m=>m.code===code);
       if(!m)return `<button type="button" class="ticker-button" disabled><strong>${marketInfo({code}).ticker}</strong><span>No report available</span></button>`;
       const info=marketInfo(m);
-      const values=m.latestIndices?.[state.lookback];
+      const values=m.latestIndices?.[SIX_MONTH_LOOKBACK];
       const commercial=GROUPS.find(g=>g.id==='commercial');
-      const description=`Commercials: ${indexPercent(values?.commercial)}`;
-      return `<button type="button" data-market="${m.code}" class="ticker-button${m.code===state.code?' selected':''}" aria-pressed="${m.code===state.code}" aria-label="${escape(info.label+', '+prettyDate(m.latestDate)+', '+description)}" title="${escape(m.name+' · '+prettyDate(m.latestDate)+(values?.observations<state.lookback?' · '+values.observations+' available reports':''))}"><strong>${info.ticker}</strong><span class="ticker-name">${info.name}</span><span class="ticker-indices"><span style="color:${commercial.color}" data-group="commercial">Commercials <b>${indexPercent(values?.commercial)}</b></span></span>${m.latestDate!==state.index.latestDate?`<small class="older-report">${prettyDate(m.latestDate)}</small>`:''}</button>`;
+      const description=`Commercials: ${indexPercent(values?.commercial)} · 6-month lookback (${SIX_MONTH_LOOKBACK} reports)`;
+      return `<button type="button" data-market="${m.code}" class="ticker-button${m.code===state.code?' selected':''}" aria-pressed="${m.code===state.code}" aria-label="${escape(info.label+', '+prettyDate(m.latestDate)+', '+description)}" title="${escape(m.name+' · '+prettyDate(m.latestDate)+' · 6-month lookback ('+SIX_MONTH_LOOKBACK+' reports)'+(values?.observations<SIX_MONTH_LOOKBACK?' · '+values.observations+' available reports':''))}"><strong>${info.ticker}</strong><span class="ticker-name">${info.name}</span><span class="ticker-indices"><span style="color:${commercial.color}" data-group="commercial">Commercials <b>${indexPercent(values?.commercial)}</b></span></span>${m.latestDate!==state.index.latestDate?`<small class="older-report">${prettyDate(m.latestDate)}</small>`:''}</button>`;
     }).join('');
     $('quickMarkets').querySelectorAll('[data-market]').forEach(b=>b.onclick=()=>selectMarket(b.dataset.market));
   }
