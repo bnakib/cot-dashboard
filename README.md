@@ -21,7 +21,7 @@ If a write step is rejected by repository policy, verify **Settings → Actions 
 - Select common futures with one-click ticker buttons, or search by exchange root symbol (CL, GC, ZC, etc.) or commodity name. The default **Main futures** list uses an explicit CFTC-code-to-symbol mapping; choose **All CFTC markets** for additional aggregates. Unmapped reports retain their names and CFTC codes rather than invented tickers.
 - See net positioning for large speculators, small speculators, and commercials.
 - Compare changes in net positions, longs, and shorts between reports.
-- Toggle charts between contracts and percentage of open interest.
+- Charts default to a 0–100% COT index for each trader group, using the last 52 reports (about one year). Choose 26 or 156 reports for a shorter or longer lookback. Net percentage of open interest and net contracts remain available as alternative chart measures.
 - Explore the last week, month, quarter (the default), year, or all available history since 2023. Ranges end at the selected report date; week shows the latest report and the preceding week when available, without filling missing weeks.
 - Select a historical report, hover charts for values, or click a chart date.
 - Charts come first; exact positions and the original official market description are available in the collapsed **Report details** panel.
@@ -45,6 +45,7 @@ These conventional labels are approximations. Non-reportable positions are not a
 
 Futures tickers are exchange product roots, not individual expiry symbols or price feeds. The mapping in `site/markets.mjs` refers to CME Group and ICE products and keeps each CFTC market identity separate; mapped sector labels override the name-based fallback. For example, CL identifies the NYMEX WTI report, not every crude-oil report. Consolidated and unmapped markets remain separately accessible in the full list.
 
+- **COT index:** 100 × (current net − lowest net) / (highest net − lowest net), calculated separately for each group using the latest 52 reports including the current report by default. The lookback follows report observations, so gaps can make its calendar span longer. It uses no future reports and is independent of the visible Week/Month/Quarter/Year range. The chart scale is fixed at 0–100%. A flat window produces an unavailable index rather than a fabricated value; early histories use the available reports since 2023 and show a partial-window notice. High/low index values describe relative positioning extremes, not a percentage of traders or a buy/sell signal. Weekly index changes are differences between consecutive report indices in **index points**.
 - **Net position:** long minus short, in contracts.
 - **Net change:** this report's net minus the previous available report's net.
 - **Net % of open interest:** net / current open interest × 100.
