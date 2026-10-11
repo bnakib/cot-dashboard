@@ -21,7 +21,7 @@ concurrency:
 
 jobs:
   update:
-    if: github.repository == 'bnakib/cot-dashboard'
+    if: github.repository == 'bobbynhub/cot-dashboard'
     runs-on: ubuntu-latest
     timeout-minutes: 25
     permissions:

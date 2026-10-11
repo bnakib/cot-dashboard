@@ -281,7 +281,7 @@ if (typeof document !== 'undefined') {
     try{
       state.index=await fetchJSON('./data/index.json');
       if(!state.index.markets?.length){
-        $('statusText').textContent='Awaiting first CFTC download';$('loading').innerHTML='<h2>The dashboard is ready for its first data import.</h2><p>In the repository’s Actions tab, run <strong>Update COT data and deploy</strong>. It downloads official CFTC history from 2023 and publishes the charts. No sample positions are displayed.</p><a class="button" href="https://github.com/bnakib/cot-dashboard/actions">Open GitHub Actions ↗</a>';
+        $('statusText').textContent='Awaiting first CFTC download';$('loading').innerHTML='<h2>The dashboard is ready for its first data import.</h2><p>In the repository’s Actions tab, run <strong>Update COT data and deploy</strong>. It downloads official CFTC history from 2023 and publishes the charts. No sample positions are displayed.</p><a class="button" href="https://github.com/bobbynhub/cot-dashboard/actions">Open GitHub Actions ↗</a>';
         return;
       }
       const age=(Date.now()-Date.parse(state.index.latestDate+'T00:00:00Z'))/86400000;
