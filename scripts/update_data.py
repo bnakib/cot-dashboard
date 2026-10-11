@@ -21,6 +21,7 @@ API = 'https://publicreporting.cftc.gov/resource/6dca-aqww.json'
 SOURCE = 'https://publicreporting.cftc.gov/d/6dca-aqww'
 START = date(2023, 1, 1)
 GROUPS = {'large': 'noncomm', 'small': 'nonrept', 'commercial': 'comm'}
+INDEX_LOOKBACKS = (26, 52, 156)
 # A fixed contract bound, never a percentage that grows with market size.
 CONSOLIDATED_ROUNDING_TOLERANCE = 3
 
@@ -156,6 +157,19 @@ def build(rows):
 def dumps(value):
     return json.dumps(value, separators=(',', ':'), ensure_ascii=False) + '\n'
 
+def latest_indices(records):
+    """Small current-report snapshot; the full history remains in market files."""
+    indices = {}
+    for lookback in INDEX_LOOKBACKS:
+        window = records[-lookback:]
+        values = {'observations': len(window)}
+        for group in GROUPS:
+            positions = [r[group]['net'] for r in window]
+            low, high = min(positions), max(positions)
+            values[group] = None if high == low else (positions[-1] - low) / (high - low) * 100
+        indices[str(lookback)] = values
+    return indices
+
 def publish(markets, target, source):
     latest = max(m['records'][-1]['date'] for m in markets.values())
     count = sum(len(m['records']) for m in markets.values())
@@ -169,12 +183,13 @@ def publish(markets, target, source):
             raise ValueError('Source history shrank or regressed; preserving previous data')
     payloads = {f'{code}.json': dumps(market) for code, market in markets.items()}
     checksum = hashlib.sha256(''.join(payloads[n] for n in sorted(payloads)).encode()).hexdigest()
-    index = {'schemaVersion': 1, 'reportType': 'Legacy Futures Only', 'sourceUrl': SOURCE, 'retrievalMethod': source,
+    index = {'schemaVersion': 2, 'reportType': 'Legacy Futures Only', 'sourceUrl': SOURCE, 'retrievalMethod': source,
              'startDate': START.isoformat(), 'latestDate': latest, 'recordCount': count, 'roundingRecordCount': rounding_count, 'checksum': checksum,
              'updatedAt': datetime.now(timezone.utc).isoformat(),
              'markets': [{'code': m['code'], 'name': m['name'], 'category': m['category'], 'firstDate': m['records'][0]['date'],
-                          'latestDate': m['records'][-1]['date'], 'count': len(m['records'])} for m in sorted(markets.values(), key=lambda m: m['name'])]}
-    if old and old.get('checksum') == checksum:
+                          'latestDate': m['records'][-1]['date'], 'count': len(m['records']),
+                          'latestIndices': latest_indices(m['records'])} for m in sorted(markets.values(), key=lambda m: m['name'])]}
+    if old and old.get('checksum') == checksum and old.get('schemaVersion') == index['schemaVersion']:
         print(f'No changes: {len(markets)} markets, {count} observations through {latest}')
         return False
     # All data are validated and staged before any tracked files are replaced.

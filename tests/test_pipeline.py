@@ -3,6 +3,7 @@ import importlib.util
 import json
 import tempfile
 import unittest
+from datetime import date, timedelta
 from pathlib import Path
 
 spec = importlib.util.spec_from_file_location('update_data', Path(__file__).parents[1] / 'scripts/update_data.py')
@@ -26,6 +27,44 @@ def consolidated(long_difference=0, short_difference=0, day='2023-01-03'):
     return fixture
 
 class PipelineTests(unittest.TestCase):
+    def test_latest_indices_use_trailing_windows_and_independent_groups(self):
+        nets = [40] + [10] * 125 + [0] + [20] * 27 + [15]
+        rows = [row((date(2023, 1, 3) + timedelta(weeks=i)).isoformat(), 20 + net, 20)
+                for i, net in enumerate(nets)]
+        markets = pipeline.build(rows)
+        snapshot = pipeline.latest_indices(markets['067651']['records'])
+        self.assertEqual(snapshot['26'], {'observations': 26, 'large': 0, 'small': None, 'commercial': 100})
+        self.assertEqual(snapshot['52'], {'observations': 52, 'large': 75, 'small': None, 'commercial': 25})
+        self.assertEqual(snapshot['156'], {'observations': 155, 'large': 37.5, 'small': None, 'commercial': 62.5})
+        with tempfile.TemporaryDirectory() as directory:
+            target = Path(directory) / 'data'
+            pipeline.publish(markets, target, 'test')
+            summary = json.loads((target / 'index.json').read_text())['markets'][0]
+            self.assertEqual(summary['latestIndices'], snapshot)
+            self.assertEqual(summary['latestDate'], rows[-1]['report_date_as_yyyy_mm_dd'])
+            self.assertEqual(summary['count'], 155)
+    def test_latest_indices_preserve_unavailable_single_report(self):
+        values = pipeline.latest_indices(pipeline.build([row()])['067651']['records'])
+        for lookback in pipeline.INDEX_LOOKBACKS:
+            self.assertEqual(values[str(lookback)], {'observations': 1, 'large': None, 'small': None, 'commercial': None})
+    def test_schema_upgrade_publishes_snapshots_even_when_official_counts_are_unchanged(self):
+        with tempfile.TemporaryDirectory() as directory:
+            target = Path(directory) / 'data'
+            markets = pipeline.build([row(), row('2023-01-10', 45, 18)])
+            pipeline.publish(markets, target, 'test')
+            original_market = (target / '067651.json').read_bytes()
+            old = json.loads((target / 'index.json').read_text())
+            old['schemaVersion'] = 1
+            for market in old['markets']:
+                del market['latestIndices']
+            (target / 'index.json').write_text(pipeline.dumps(old))
+            self.assertTrue(pipeline.publish(markets, target, 'test'))
+            upgraded = json.loads((target / 'index.json').read_text())
+            self.assertEqual(upgraded['schemaVersion'], 2)
+            self.assertEqual(upgraded['checksum'], old['checksum'])
+            self.assertEqual(upgraded['markets'][0]['latestIndices']['52']['large'], 100)
+            self.assertEqual((target / '067651.json').read_bytes(), original_market)
+            self.assertFalse(pipeline.publish(markets, target, 'test'))
     def test_net_and_weekly_change(self):
         market = pipeline.build([row('2023-01-10', 45, 18), row()])['067651']
         first, second = market['records']

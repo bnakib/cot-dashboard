@@ -20,6 +20,16 @@ export function cotIndexSeries(records, lookback=52) {
   });
   return series;
 }
+export function indexPercent(value) { return Number.isFinite(value)?value.toFixed(1)+'%':'—'; }
+export function spreadEndLabels(labels, minY, maxY, gap=18) {
+  const placed=labels.map(label=>({...label})).sort((a,b)=>a.y-b.y);
+  placed.forEach((label,i)=>{label.labelY=Math.max(minY,label.y,i?placed[i-1].labelY+gap:minY);});
+  if(placed.length&&placed.at(-1).labelY>maxY) {
+    placed.at(-1).labelY=maxY;
+    for(let i=placed.length-2;i>=0;i--)placed[i].labelY=Math.min(placed[i].labelY,placed[i+1].labelY-gap);
+  }
+  return placed;
+}
 export function chartValue(record, previous, group, unit, changes=false, indexValues=null) {
   if(unit==='index') {
     const current=indexValues?.get(record.date)?.[group]??null;
@@ -98,19 +108,40 @@ if (typeof document !== 'undefined') {
     if(wanted.code!==state.code||!state.market||$('dashboard').hidden)loadMarket(wanted.code);
   }
   function renderQuickMarkets() {
-    const markets=QUICK_MARKETS.map(code=>state.index.markets.find(m=>m.code===code)).filter(m=>m&&(!$('activeOnly').checked||m.latestDate===state.index.latestDate));
-    $('quickMarkets').innerHTML=markets.map(m=>{
+    $('quickMarketDate').textContent=`Latest COT indices · ${state.lookback}-report lookback · L = large speculators, S = small speculators, C = commercials · Latest dataset: ${prettyDate(state.index.latestDate)}`;
+    $('quickMarkets').innerHTML=QUICK_MARKETS.map(code=>{
+      const m=state.index.markets.find(m=>m.code===code);
+      if(!m)return `<button type="button" class="ticker-button" disabled><strong>${marketInfo({code}).ticker}</strong><span>No report available</span></button>`;
       const info=marketInfo(m);
-      return `<button type="button" data-market="${m.code}" class="ticker-button${m.code===state.code?' selected':''}" aria-pressed="${m.code===state.code}" title="${escape(m.name)}"><strong>${info.ticker}</strong><span>${info.name}</span></button>`;
+      const values=m.latestIndices?.[state.lookback];
+      const description=GROUPS.map(g=>`${g.label}: ${indexPercent(values?.[g.id])}`).join(', ');
+      return `<button type="button" data-market="${m.code}" class="ticker-button${m.code===state.code?' selected':''}" aria-pressed="${m.code===state.code}" aria-label="${escape(info.label+', '+prettyDate(m.latestDate)+', '+description)}" title="${escape(m.name+' · '+prettyDate(m.latestDate)+(values?.observations<state.lookback?' · '+values.observations+' available reports':''))}"><strong>${info.ticker}</strong><span class="ticker-name">${info.name}</span><span class="ticker-indices">${GROUPS.map((g,i)=>`<span style="color:${g.color}" data-group="${g.id}">${['L','S','C'][i]} <b>${indexPercent(values?.[g.id])}</b></span>`).join('')}</span>${m.latestDate!==state.index.latestDate?`<small class="older-report">${prettyDate(m.latestDate)}</small>`:''}</button>`;
     }).join('');
-    $('quickMarkets').querySelectorAll('button').forEach(b=>b.onclick=()=>{
-      $('search').value='';$('category').value='all';$('coverage').value='main';
-      // Set the dropdown first; loadMarket owns the selected market state.
-      const markets=matchingMarkets(state.index,{activeOnly:$('activeOnly').checked});
-      $('market').replaceChildren(...markets.map(m=>{const o=document.createElement('option');o.value=m.code;o.textContent=marketInfo(m).label;return o;}));
-      $('market').disabled=false;$('market').value=b.dataset.market;loadMarket(b.dataset.market);
-      $('marketCount').textContent=`${markets.length} markets · Search by ticker or name. Use All CFTC markets for additional reports.`;
-    });
+    $('quickMarkets').querySelectorAll('[data-market]').forEach(b=>b.onclick=()=>selectMarket(b.dataset.market));
+  }
+  async function selectMarket(code) {
+    const market=state.index.markets.find(m=>m.code===code);
+    if(!market)return;
+    $('search').value='';$('category').value='all';$('coverage').value=marketInfo(market).ticker?'main':'all';
+    if(market.latestDate!==state.index.latestDate)$('activeOnly').checked=false;
+    const markets=matchingMarkets(state.index,{mainOnly:$('coverage').value==='main',activeOnly:$('activeOnly').checked});
+    $('market').replaceChildren(...markets.map(m=>{const o=document.createElement('option');o.value=m.code;o.textContent=marketInfo(m).label;return o;}));
+    $('market').disabled=false;$('market').value=code;
+    $('marketCount').textContent=`${markets.length} markets · Search by ticker or name. Use All CFTC markets for additional reports.`;
+    await loadMarket(code);
+  }
+  function renderMarketOverview() {
+    if(!state.index)return;
+    const markets=matchingMarkets(state.index,{query:$('overviewSearch').value,mainOnly:$('overviewCoverage').value==='main',activeOnly:false});
+    $('overviewDescription').textContent=`Latest available report for each market · ${state.lookback}-report COT index · Always current, including when the chart shows history. — means no varying positioning in the available lookback.`;
+    $('overviewCount').textContent=`${markets.length} markets · Older dates are highlighted. Index hover hints show the number of available reports.`;
+    $('marketOverviewRows').innerHTML=markets.map(m=>{
+      const info=marketInfo(m),values=m.latestIndices?.[state.lookback];
+      const title=values?`${values.observations} of ${state.lookback} requested reports`: 'Index unavailable';
+      return `<tr><td><button type="button" class="market-link" data-market="${m.code}">${escape(info.ticker||'CFTC '+m.code)}<small>${escape(info.name)}</small></button></td><td class="${m.latestDate!==state.index.latestDate?'older-report':''}"><time datetime="${m.latestDate}">${prettyDate(m.latestDate)}</time></td>${GROUPS.map(g=>`<td style="color:${g.color}" title="${title}">${indexPercent(values?.[g.id])}</td>`).join('')}</tr>`;
+    }).join('');
+    if(!markets.length)$('marketOverviewRows').innerHTML='<tr><td colspan="5">No matching markets. Try another ticker, name, or CFTC code.</td></tr>';
+    $('marketOverviewRows').querySelectorAll('[data-market]').forEach(b=>b.onclick=async()=>{await selectMarket(b.dataset.market);if(!$('dashboard').hidden)$('marketName').scrollIntoView({behavior:'smooth',block:'start'});});
   }
   async function loadMarket(code) {
     const request=++state.request;
@@ -171,7 +202,7 @@ if (typeof document !== 'undefined') {
   }
   function drawChart(id, records, changes) {
     const target=$(id), width=Math.max(280,target.clientWidth), height=changes?240:360;
-    const left=width<500?48:65,right=20,top=20,bottom=35,w=width-left-right,h=height-top-bottom;
+    const left=width<500?48:65,right=changes?20:width<500?62:78,top=20,bottom=35,w=width-left-right,h=height-top-bottom;
     const dates=records.map(r=>Date.parse(r.date+'T00:00:00Z'));
     let minX=dates[0],maxX=dates.at(-1);if(minX===maxX){minX-=86400000*3;maxX+=86400000*3;}
     const x=d=>left+(Date.parse(d+'T00:00:00Z')-minX)/(maxX-minX)*w;
@@ -204,6 +235,12 @@ if (typeof document !== 'undefined') {
         svg+=`<path d="${path}" fill="none" stroke="${g.color}" stroke-width="2" stroke-linejoin="round"/>`;
         if(records.length===1){const v=value(records[0],g);if(v!==null)svg+=`<circle cx="${x(records[0].date)}" cy="${y(v)}" r="4" fill="${g.color}"/>`;}
       });
+      const latest=records.at(-1);
+      const labels=spreadEndLabels(series.flatMap(g=>{const v=value(latest,g);return v===null?[]:[{...g,value:v,y:y(v)}];}),top+8,top+h-5);
+      for(const g of labels) {
+        const label=state.unit==='index'?indexPercent(g.value):state.unit==='percent'?g.value.toFixed(1)+'%':tick(g.value);
+        svg+=`<circle cx="${x(latest.date)}" cy="${g.y}" r="3" fill="${g.color}"/><path class="svg-label-connector" d="M${x(latest.date)+4},${g.y} L${x(latest.date)+9},${g.labelY} L${x(latest.date)+13},${g.labelY}" stroke="${g.color}" fill="none"/><text class="svg-end-label" data-group="${g.id}" data-date="${latest.date}" aria-label="${escape(g.label+' · '+prettyDate(latest.date)+' · '+label)}" x="${x(latest.date)+17}" y="${g.labelY+4}" fill="${g.color}">${escape(label)}</text>`;
+      }
     }
     svg+=`<line class="svg-selected" x1="${x(state.date)}" x2="${x(state.date)}" y1="${top}" y2="${height-bottom}"/><line class="svg-cursor" visibility="hidden" x1="0" x2="0" y1="${top}" y2="${height-bottom}"/><rect class="svg-overlay" x="${left}" y="${top}" width="${w}" height="${h}"/></svg>`;
     target.innerHTML=svg;
@@ -216,7 +253,13 @@ if (typeof document !== 'undefined') {
       tooltip.hidden=false;
       tooltip.style.left=Math.max(8,Math.min(event.clientX+15,innerWidth-tooltip.offsetWidth-12))+'px';
       tooltip.style.top=Math.max(8,Math.min(event.clientY+15,innerHeight-tooltip.offsetHeight-12))+'px';
-      for(const name of ['positionChart','changeChart']){const cursor=$(name).querySelector('.svg-cursor');if(cursor){cursor.setAttribute('x1',x(r.date));cursor.setAttribute('x2',x(r.date));cursor.setAttribute('visibility','visible');}}
+      for(const name of ['positionChart','changeChart']){
+        const chart=$(name),cursor=chart.querySelector('.svg-cursor'),plot=chart.querySelector('.svg-overlay');
+        if(cursor&&plot){
+          const cursorX=Number(plot.getAttribute('x'))+(Date.parse(r.date+'T00:00:00Z')-minX)/(maxX-minX)*Number(plot.getAttribute('width'));
+          cursor.setAttribute('x1',cursorX);cursor.setAttribute('x2',cursorX);cursor.setAttribute('visibility','visible');
+        }
+      }
     };
     overlay.onpointerleave=()=>{$('tooltip').hidden=true;document.querySelectorAll('.svg-cursor').forEach(c=>c.setAttribute('visibility','hidden'));};
     overlay.onclick=event=>{state.date=nearest(event).date;$('tooltip').hidden=true;render();};
@@ -226,7 +269,8 @@ if (typeof document !== 'undefined') {
   $('reportDate').onchange=()=>{state.date=$('reportDate').value;render();};
   $('latestReport').onclick=()=>{state.date=state.market.records.at(-1).date;render();};
   $('unit').onchange=()=>{state.unit=$('unit').value;render();};
-  $('indexWindow').onchange=()=>{state.lookback=Number($('indexWindow').value);if(state.market)state.indexValues=cotIndexSeries(state.market.records,state.lookback);render();};
+  $('indexWindow').onchange=()=>{state.lookback=Number($('indexWindow').value);if(state.market)state.indexValues=cotIndexSeries(state.market.records,state.lookback);renderQuickMarkets();renderMarketOverview();render();};
+  $('overviewSearch').oninput=renderMarketOverview;$('overviewCoverage').onchange=renderMarketOverview;
   document.querySelectorAll('[data-range]').forEach(b=>b.onclick=()=>{state.range=b.dataset.range;document.querySelectorAll('[data-range]').forEach(v=>{const selected=v===b;v.classList.toggle('selected',selected);v.setAttribute('aria-pressed',String(selected));});render();});
   let resizeTimer;window.addEventListener('resize',()=>{clearTimeout(resizeTimer);resizeTimer=setTimeout(()=>{if(!$('dashboard').hidden)render();},150);});
   (async()=>{
@@ -240,6 +284,7 @@ if (typeof document !== 'undefined') {
       $('statusDot').classList.add(age>10?'stale':'fresh');
       $('statusText').textContent=`${age>10?'Older report · ':''}Positions as of ${prettyDate(state.index.latestDate)}`;
       $('refreshText').textContent=`${state.index.markets.length} markets · Data updated ${new Date(state.index.updatedAt).toLocaleString()}`;
+      $('marketOverview').hidden=false;renderMarketOverview();
       filterMarkets();
     }catch(error){$('statusText').textContent='Data unavailable';showError(error.message);}
   })();
