@@ -2,11 +2,11 @@
 
 A personal, open-source dashboard for official CFTC **Legacy Futures Only** positioning, starting January 2023. Hosted entirely on GitHub Pages and updated by GitHub Actions. No Azure account, price subscription, API key, database server, or paid frontend dependency is required.
 
-**Dashboard:** https://bnakib.github.io/cot-dashboard/
+**Dashboard:** https://bobbynhub.github.io/cot-dashboard/
 
 ## First-time publishing
 
-1. Open **Settings → Pages** in this repository: https://github.com/bnakib/cot-dashboard/settings/pages
+1. Open **Settings → Pages** in this repository: https://github.com/bobbynhub/cot-dashboard/settings/pages
 2. Under **Build and deployment → Source**, select **GitHub Actions**. There is no need to choose a template or create another workflow.
 3. Open **Actions → Update COT data and deploy → Run workflow**, leaving branch `main` selected.
 4. Wait for the `update` and `deploy` jobs to finish. The first run downloads the complete history from 2023; later runs detect changes and corrections.
