@@ -1,6 +1,7 @@
 // Exchange product roots, keyed by CFTC market identity. Never combine reports
 // just because their product names are similar, or invent roots for aggregates.
 // Product references: cmegroup.com/markets and ice.com/products.
+export const SIX_MONTH_LOOKBACK = 26;
 export const FUTURES = {
   '067651':['CL','WTI crude oil','NYMEX','Energy'],
   '06765T':['BZ','Brent crude oil','NYMEX','Energy'],
@@ -83,7 +84,7 @@ export function matchingMarkets(index,{query='',category='all',mainOnly=true,act
     return Number(exactY)-Number(exactX)||Number(Boolean(y.ticker))-Number(Boolean(x.ticker))||x.label.localeCompare(y.label);
   });
 }
-export function overviewMarkets(index,{query='',mainOnly=true,lookback=52}={}) {
+export function overviewMarkets(index,{query='',mainOnly=true,lookback=SIX_MONTH_LOOKBACK}={}) {
   const markets=matchingMarkets(index,{query,mainOnly,activeOnly:false});
   if(!mainOnly)return markets;
   const commercial=market=>{
