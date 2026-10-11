@@ -202,7 +202,7 @@ if (typeof document !== 'undefined') {
   }
   function drawChart(id, records, changes) {
     const target=$(id), width=Math.max(280,target.clientWidth), height=changes?240:360;
-    const left=width<500?48:65,right=changes?20:width<500?62:78,top=20,bottom=35,w=width-left-right,h=height-top-bottom;
+    const left=width<500?48:65,right=width<500?62:78,top=20,bottom=35,w=width-left-right,h=height-top-bottom;
     const dates=records.map(r=>Date.parse(r.date+'T00:00:00Z'));
     let minX=dates[0],maxX=dates.at(-1);if(minX===maxX){minX-=86400000*3;maxX+=86400000*3;}
     const x=d=>left+(Date.parse(d+'T00:00:00Z')-minX)/(maxX-minX)*w;
