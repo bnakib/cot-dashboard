@@ -36,9 +36,9 @@ def field(row, *names, required=True):
 
 def number(value):
     text = str(value).replace(',', '').strip()
-    if not re.fullmatch(r'\d+', text):
+    if not re.fullmatch(r'\d+(?:\.0+)?', text):
         raise ValueError(f'Invalid nonnegative contract count: {value!r}')
-    return int(text)
+    return int(text.split('.')[0])
 
 def category(name):
     name = name.upper()
@@ -53,7 +53,7 @@ def category(name):
     return 'Other'
 
 def normalize(row):
-    day = date.fromisoformat(str(field(row, 'report_date_as_yyyy_mm_dd'))[:10])
+    day = date.fromisoformat(str(field(row, 'report_date_as_yyyy_mm_dd', 'As of Date in Form YYYY-MM-DD'))[:10])
     if day < START:
         return None
     code = str(field(row, 'cftc_contract_market_code')).strip()
@@ -61,11 +61,12 @@ def normalize(row):
         raise ValueError(f'Unsafe market code: {code}')
     name = str(field(row, 'market_and_exchange_names')).strip()
     oi = number(field(row, 'open_interest_all'))
-    spread = number(field(row, 'noncomm_postions_spread_all', 'noncomm_positions_spread_all'))
+    spread = number(field(row, 'noncomm_postions_spread_all', 'noncomm_positions_spread_all', 'Noncommercial Positions-Spreading (All)'))
     record = {'date': day.isoformat(), 'openInterest': oi, 'spreading': spread}
+    labels = {'large': 'Noncommercial', 'small': 'Nonreportable', 'commercial': 'Commercial'}
     for group, prefix in GROUPS.items():
-        long = number(field(row, f'{prefix}_positions_long_all'))
-        short = number(field(row, f'{prefix}_positions_short_all'))
+        long = number(field(row, f'{prefix}_positions_long_all', f'{labels[group]} Positions-Long (All)'))
+        short = number(field(row, f'{prefix}_positions_short_all', f'{labels[group]} Positions-Short (All)'))
         record[group] = {'long': long, 'short': short, 'net': long - short}
     for side in ('long', 'short'):
         total = sum(record[g][side] for g in GROUPS) + spread
@@ -194,7 +195,7 @@ def main():
             rows, source = api_rows(), 'CFTC public reporting API'
             markets = build(rows)
         except Exception as exc:
-            print(f'API unavailable or invalid ({type(exc).__name__}); trying official annual archives', flush=True)
+            print(f'API unavailable or invalid ({type(exc).__name__}: {exc}); trying official annual archives', flush=True)
             rows, source = archive_rows(), 'CFTC annual archives'
     markets = build(rows)
     publish(markets, args.output, source)

@@ -43,8 +43,27 @@ class PipelineTests(unittest.TestCase):
         market = pipeline.build([row(), copy.deepcopy(row()), row('2022-12-27')])['067651']
         self.assertEqual(len(market['records']), 1)
     def test_annual_csv_headers(self):
-        annual = {k.title(): v for k, v in row().items()}
-        self.assertEqual(pipeline.normalize(annual)[0], '067651')
+        api = row()
+        labels = {
+            'report_date_as_yyyy_mm_dd': 'As of Date in Form YYYY-MM-DD',
+            'cftc_contract_market_code': 'CFTC Contract Market Code',
+            'market_and_exchange_names': 'Market and Exchange Names',
+            'open_interest_all': 'Open Interest (All)',
+            'noncomm_positions_long_all': 'Noncommercial Positions-Long (All)',
+            'noncomm_positions_short_all': 'Noncommercial Positions-Short (All)',
+            'noncomm_postions_spread_all': 'Noncommercial Positions-Spreading (All)',
+            'comm_positions_long_all': 'Commercial Positions-Long (All)',
+            'comm_positions_short_all': 'Commercial Positions-Short (All)',
+            'nonrept_positions_long_all': 'Nonreportable Positions-Long (All)',
+            'nonrept_positions_short_all': 'Nonreportable Positions-Short (All)',
+        }
+        annual = {labels[k]: v for k, v in api.items()}
+        self.assertEqual(pipeline.normalize(annual), pipeline.normalize(api))
+        underscored = {k.replace(' ', '_'): v for k, v in annual.items()}
+        self.assertEqual(pipeline.normalize(underscored), pipeline.normalize(api))
+    def test_integral_decimal_counts(self):
+        self.assertEqual(pipeline.number('1,000.0'), 1000)
+        self.assertEqual(pipeline.number('0.00'), 0)
     def test_negative_and_fractional_counts_rejected(self):
         for value in ['-1', '1.5', '', 'oops']:
             with self.assertRaises(ValueError): pipeline.number(value)
