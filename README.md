@@ -18,13 +18,13 @@ If a write step is rejected by repository policy, verify **Settings → Actions 
 
 ## What you can do
 
-- Search and select any available CFTC contract market; filter by sector.
+- Select common futures with one-click ticker buttons, or search by exchange root symbol (CL, GC, ZC, etc.) or commodity name. The default **Main futures** list uses an explicit CFTC-code-to-symbol mapping; choose **All CFTC markets** for additional aggregates. Unmapped reports retain their names and CFTC codes rather than invented tickers.
 - See net positioning for large speculators, small speculators, and commercials.
 - Compare changes in net positions, longs, and shorts between reports.
 - Toggle charts between contracts and percentage of open interest.
-- Explore 3-month, 6-month, 1-year, or all available history since 2023.
+- Explore the last week, month, quarter (the default), year, or all available history since 2023. Ranges end at the selected report date; week shows the latest report and the preceding week when available, without filling missing weeks.
 - Select a historical report, hover charts for values, or click a chart date.
-- Download a market's complete history as CSV.
+- Charts come first; exact positions and the original official market description are available in the collapsed **Report details** panel.
 - Include older/inactive markets by disabling **Latest-report markets only**.
 
 The remembered market selection is stored only in your browser. There are no logins, analytics, external chart scripts, cookies, or price feeds. The site and repository are public.
@@ -42,6 +42,8 @@ Only position dates on or after **2023-01-01** are included. A new market may ha
 | Commercials | Commercial |
 
 These conventional labels are approximations. Non-reportable positions are not an exact retail-trader classification, and commercial positions are not necessarily a simple directional forecast. Sector labels are convenience classifications inferred from market names. Market identities use CFTC contract-market codes, preserving leading zeroes; different exchanges/contracts are not combined.
+
+Futures tickers are exchange product roots, not individual expiry symbols or price feeds. The mapping in `site/markets.mjs` refers to CME Group and ICE products and keeps each CFTC market identity separate; mapped sector labels override the name-based fallback. For example, CL identifies the NYMEX WTI report, not every crude-oil report. Consolidated and unmapped markets remain separately accessible in the full list.
 
 - **Net position:** long minus short, in contracts.
 - **Net change:** this report's net minus the previous available report's net.
