@@ -18,19 +18,19 @@ If a write step is rejected by repository policy, verify **Settings → Actions 
 
 ## What you can do
 
-- Select favorite futures with one-click ticker boxes in this fixed order: ES, NQ, RTY, YM, GC, SI, PA, PL, HG, CL, NG, HO, RB, DX, 6A, 6B, 6C, 6E, 6J, 6M, 6S, VX, ZB, ZC, ZL, ZM, ZO, ZS, ZW. Each box shows the latest COT indices for large speculators (L, blue), small speculators (S, yellow), and commercials (C, red). Search, sector filters, and historical chart selections do not hide favorites or change their latest values; older reports show their date.
+- Select favorite futures with one-click ticker boxes in this fixed order: ES, NQ, RTY, YM, GC, SI, PA, PL, HG, CL, NG, HO, RB, DX, 6A, 6B, 6C, 6E, 6J, 6M, 6S, VX, ZB, ZC, ZL, ZM, ZO, ZS, ZW. Each box shows only the latest Commercials COT index in muted red. Search, sector filters, and historical chart selections do not hide favorites or change their latest values; older reports show their date.
 - Search by exchange root symbol (CL, GC, ZC, etc.) or commodity name. The default **Main futures** selector uses an explicit CFTC-code-to-symbol mapping; choose **All CFTC markets** for additional aggregates. Unmapped reports retain their names and CFTC codes rather than invented tickers. YM maps to the CBOT DJIA x $5 (E-mini Dow) report; 6M maps to the CME Mexican peso report.
 - See net positioning for large speculators, small speculators, and commercials.
 - Compare changes in net positions, longs, and shorts between reports.
 - Charts default to a 0–100% COT index for each trader group, using the last 52 reports (about one year). Choose 26 or 156 reports for a shorter or longer lookback. Net percentage of open interest and net contracts remain available as alternative chart measures.
 - Colored labels at the end of each positioning line show its last report value, with a % sign in index mode. Nearby labels are separated for readability. Historical chart selections label that historical report; the favorites and market overview always retain the latest available data.
-- The searchable **Latest COT indices · All markets** table shows all reported markets, each market's latest position date, and all three group indices. Switch to **Main futures** for mapped tickers only, or click a market to open its chart. The table and favorites use the chart's selected index lookback, independently of its visible time range and unit. Unavailable/flat windows show —, and the number of available reports appears in the index's hover hint.
+- The searchable **Latest COT indices** table defaults to **Main futures**, sorted by the latest Commercials index from highest to lowest, with unavailable values last and ticker order for ties. It shows each market's latest position date and all three group indices. Main futures is the first dropdown option; choose **All CFTC markets** for the complete market list, or click a market to open its chart. Rankings update with the selected lookback. The table and favorites use the chart's selected index lookback, independently of its visible time range and unit. Unavailable/flat windows show —, and the number of available reports appears in the index's hover hint.
 - Explore the last week, month, quarter (the default), year, or all available history since 2023. Ranges end at the selected report date; week shows the latest report and the preceding week when available, without filling missing weeks.
 - Select a historical report, hover charts for values, or click a chart date.
 - Charts come first; exact positions and the original official market description are available in the collapsed **Report details** panel.
 - Include older/inactive markets by disabling **Latest-report markets only**.
 
-The remembered market selection is stored only in your browser. There are no logins, analytics, external chart scripts, cookies, or price feeds. The site and repository are public.
+The dashboard opens on **ES (S&P 500)** on each fresh page load. Other selections remain active while using the page. There are no logins, analytics, external chart scripts, cookies, or price feeds. The site and repository are public.
 
 ## Data source and methodology
 

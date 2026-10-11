@@ -1,4 +1,4 @@
-import {marketInfo, matchingMarkets, QUICK_MARKETS} from './markets.mjs';
+import {marketInfo, matchingMarkets, overviewMarkets, QUICK_MARKETS} from './markets.mjs';
 export const GROUPS = [
   {id:'large', label:'Large speculators', official:'Non-commercial', color:'#7fa6d6'},
   {id:'small', label:'Small speculators', official:'Non-reportable', color:'#d1bd78'},
@@ -78,7 +78,6 @@ if (typeof document !== 'undefined') {
   const cls = n => n>0?'up':n<0?'down':'neutral';
   const prettyDate = d => new Date(d+'T00:00:00Z').toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric',timeZone:'UTC'});
   const escape = s => String(s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
-  const storage = {get:k=>{try{return localStorage.getItem(k);}catch{return null;}},set:(k,v)=>{try{localStorage.setItem(k,v);}catch{}}};
   async function fetchJSON(path) {
     const response = await fetch(path, {cache:'no-cache'});
     if (!response.ok) throw new Error(`Data request failed (${response.status})`);
@@ -103,19 +102,20 @@ if (typeof document !== 'undefined') {
       $('loading').textContent='No matching markets. Try All CFTC markets, another sector, or include older markets.';
       return;
     }
-    const wanted=markets.find(m=>m.code===state.code)||markets.find(m=>m.code===storage.get('cot-market'))||markets.find(m=>m.code==='067651')||markets[0];
+    const wanted=markets.find(m=>m.code===state.code)||markets.find(m=>m.code==='13874A')||markets[0];
     $('market').value=wanted.code;
     if(wanted.code!==state.code||!state.market||$('dashboard').hidden)loadMarket(wanted.code);
   }
   function renderQuickMarkets() {
-    $('quickMarketDate').textContent=`Latest COT indices · ${state.lookback}-report lookback · L = large speculators, S = small speculators, C = commercials · Latest dataset: ${prettyDate(state.index.latestDate)}`;
+    $('quickMarketDate').textContent=`Latest Commercials COT index · ${state.lookback}-report lookback · Latest dataset: ${prettyDate(state.index.latestDate)}`;
     $('quickMarkets').innerHTML=QUICK_MARKETS.map(code=>{
       const m=state.index.markets.find(m=>m.code===code);
       if(!m)return `<button type="button" class="ticker-button" disabled><strong>${marketInfo({code}).ticker}</strong><span>No report available</span></button>`;
       const info=marketInfo(m);
       const values=m.latestIndices?.[state.lookback];
-      const description=GROUPS.map(g=>`${g.label}: ${indexPercent(values?.[g.id])}`).join(', ');
-      return `<button type="button" data-market="${m.code}" class="ticker-button${m.code===state.code?' selected':''}" aria-pressed="${m.code===state.code}" aria-label="${escape(info.label+', '+prettyDate(m.latestDate)+', '+description)}" title="${escape(m.name+' · '+prettyDate(m.latestDate)+(values?.observations<state.lookback?' · '+values.observations+' available reports':''))}"><strong>${info.ticker}</strong><span class="ticker-name">${info.name}</span><span class="ticker-indices">${GROUPS.map((g,i)=>`<span style="color:${g.color}" data-group="${g.id}">${['L','S','C'][i]} <b>${indexPercent(values?.[g.id])}</b></span>`).join('')}</span>${m.latestDate!==state.index.latestDate?`<small class="older-report">${prettyDate(m.latestDate)}</small>`:''}</button>`;
+      const commercial=GROUPS.find(g=>g.id==='commercial');
+      const description=`Commercials: ${indexPercent(values?.commercial)}`;
+      return `<button type="button" data-market="${m.code}" class="ticker-button${m.code===state.code?' selected':''}" aria-pressed="${m.code===state.code}" aria-label="${escape(info.label+', '+prettyDate(m.latestDate)+', '+description)}" title="${escape(m.name+' · '+prettyDate(m.latestDate)+(values?.observations<state.lookback?' · '+values.observations+' available reports':''))}"><strong>${info.ticker}</strong><span class="ticker-name">${info.name}</span><span class="ticker-indices"><span style="color:${commercial.color}" data-group="commercial">Commercials <b>${indexPercent(values?.commercial)}</b></span></span>${m.latestDate!==state.index.latestDate?`<small class="older-report">${prettyDate(m.latestDate)}</small>`:''}</button>`;
     }).join('');
     $('quickMarkets').querySelectorAll('[data-market]').forEach(b=>b.onclick=()=>selectMarket(b.dataset.market));
   }
@@ -132,9 +132,13 @@ if (typeof document !== 'undefined') {
   }
   function renderMarketOverview() {
     if(!state.index)return;
-    const markets=matchingMarkets(state.index,{query:$('overviewSearch').value,mainOnly:$('overviewCoverage').value==='main',activeOnly:false});
+    const mainOnly=$('overviewCoverage').value==='main';
+    const markets=overviewMarkets(state.index,{query:$('overviewSearch').value,mainOnly,lookback:state.lookback});
+    $('overviewTitle').textContent=`Latest COT indices · ${mainOnly?'Main futures':'All markets'}`;
+    $('overviewCommercialsHeading').textContent=mainOnly?'Commercials ↓':'Commercials';
+    $('overviewCommercialsHeading').setAttribute('aria-sort',mainOnly?'descending':'none');
     $('overviewDescription').textContent=`Latest available report for each market · ${state.lookback}-report COT index · Always current, including when the chart shows history. — means no varying positioning in the available lookback.`;
-    $('overviewCount').textContent=`${markets.length} markets · Older dates are highlighted. Index hover hints show the number of available reports.`;
+    $('overviewCount').textContent=`${markets.length} markets${mainOnly?' · Commercials index: highest to lowest; unavailable values last':''} · Older dates are highlighted. Index hover hints show the number of available reports.`;
     $('marketOverviewRows').innerHTML=markets.map(m=>{
       const info=marketInfo(m),values=m.latestIndices?.[state.lookback];
       const title=values?`${values.observations} of ${state.lookback} requested reports`: 'Index unavailable';
@@ -153,7 +157,7 @@ if (typeof document !== 'undefined') {
       if(!market.records?.length)throw new Error('This market has no observations.');
       state.cache.set(code,market); state.market=market; state.code=code;
       state.indexValues=cotIndexSeries(market.records,state.lookback);
-      state.date=market.records.at(-1).date;storage.set('cot-market',code);
+      state.date=market.records.at(-1).date;
       $('reportDate').replaceChildren(...market.records.toReversed().map(r=>{const o=document.createElement('option');o.value=r.date;o.textContent=prettyDate(r.date);return o;}));
       const info=marketInfo(market);
       $('marketName').textContent=info.label;

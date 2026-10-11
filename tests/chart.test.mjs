@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {GROUPS, netPercent, chartValue, rangeRecords, csvForMarket, roundingNotice, cotIndexSeries, indexPercent, spreadEndLabels} from '../site/app.mjs';
-import {marketInfo, matchingMarkets, QUICK_MARKETS, FUTURES} from '../site/markets.mjs';
+import {marketInfo, matchingMarkets, overviewMarkets, QUICK_MARKETS, FUTURES} from '../site/markets.mjs';
 function record(date,oi,net,change=null) {
   return {date,openInterest:oi,spreading:10,...Object.fromEntries(GROUPS.map(g=>[g.id,{long:40,short:20,net,change:change===null?null:{long:5,short:-2,net:change}}]))};
 }
@@ -15,6 +15,19 @@ test('favorite ticker order maps to distinct reports, including E-mini Dow and M
   ]};
   assert.deepEqual(matchingMarkets(index,{query:'YM'}).map(m=>m.code),['124603']);
   assert.deepEqual(matchingMarkets(index,{query:'6M'}).map(m=>m.code),['095741']);
+});
+test('main futures rank by the selected Commercials index, with zero before unavailable values',()=>{
+  const market=(code,a,b)=>({code,name:FUTURES[code]?.[1]||'Unmapped',latestDate:'2026-10-06',latestIndices:{52:{commercial:a},26:{commercial:b}}});
+  const index={latestDate:'2026-10-06',markets:[
+    market('088691',0,100),market('067651',100,0),market('209742',9,50),market('13874A',100,null),
+    market('084691',null,20),market('075651',undefined,10),market('13874+',100,100)
+  ]};
+  const original=index.markets.map(m=>m.code);
+  assert.deepEqual(overviewMarkets(index).map(m=>m.code),['067651','13874A','209742','088691','075651','084691']);
+  assert.deepEqual(overviewMarkets(index,{lookback:26}).map(m=>m.code),['088691','209742','084691','075651','067651','13874A']);
+  assert.deepEqual(overviewMarkets(index,{query:'gc'}).map(m=>m.code),['088691']);
+  assert.deepEqual(overviewMarkets(index,{mainOnly:false}).map(m=>m.code),matchingMarkets(index,{mainOnly:false,activeOnly:false}).map(m=>m.code));
+  assert.deepEqual(index.markets.map(m=>m.code),original);
 });
 test('index labels retain zero and hundred percent and leave unavailable values blank',()=>{
   assert.equal(indexPercent(0),'0.0%');assert.equal(indexPercent(100),'100.0%');
