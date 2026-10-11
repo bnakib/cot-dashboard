@@ -1,6 +1,6 @@
 # COT Dashboard
 
-A personal, open-source dashboard for official CFTC **Legacy Futures Only** positioning, starting January 2023. Hosted entirely on GitHub Pages and updated by GitHub Actions. No Azure account, price subscription, API key, database server, or paid frontend dependency is required.
+A personal, open-source dashboard for official CFTC **Legacy Futures Only** positioning, starting January 2023. Hosted entirely on GitHub Pages and updated by GitHub Actions.
 
 **Dashboard:** https://bobbynhub.github.io/cot-dashboard/
 
