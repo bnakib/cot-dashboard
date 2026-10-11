@@ -1,10 +1,51 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {GROUPS, netPercent, chartValue, rangeRecords, csvForMarket, roundingNotice} from '../site/app.mjs';
+import {GROUPS, netPercent, chartValue, rangeRecords, csvForMarket, roundingNotice, cotIndexSeries} from '../site/app.mjs';
 import {marketInfo, matchingMarkets} from '../site/markets.mjs';
 function record(date,oi,net,change=null) {
   return {date,openInterest:oi,spreading:10,...Object.fromEntries(GROUPS.map(g=>[g.id,{long:40,short:20,net,change:change===null?null:{long:5,short:-2,net:change}}]))};
 }
+test('COT index places signed net positions at their historical low, high, and midpoint',()=>{
+  const rows=[record('2023-01-03',100,-20),record('2023-01-10',100,20),record('2023-01-17',100,0),record('2023-01-24',100,-20)];
+  const series=cotIndexSeries(rows,3);
+  assert.equal(series.get(rows[1].date).large,100);
+  assert.equal(series.get(rows[2].date).large,50);
+  assert.equal(series.get(rows[3].date).large,0);
+  assert.equal(series.get(rows[3].date).observations,3);
+});
+test('each trader group uses its own range and no future report affects earlier indices',()=>{
+  const rows=[record('2023-01-03',100,10),record('2023-01-10',100,20),record('2023-01-17',100,15)];
+  rows.forEach((r,i)=>{r.small.net=[30,10,5][i];r.commercial.net=[-40,-30,-20][i];});
+  const prefix=cotIndexSeries(rows,3);
+  assert.deepEqual(prefix.get('2023-01-17'),{observations:3,large:50,small:0,commercial:100});
+  const full=cotIndexSeries([...rows,record('2023-01-24',100,1000)],3);
+  for(const r of rows)assert.deepEqual(full.get(r.date),prefix.get(r.date));
+});
+test('flat and one-report windows are unavailable; partial windows report their actual size',()=>{
+  const rows=[record('2023-01-03',100,20),record('2023-01-10',100,20)];
+  const series=cotIndexSeries(rows);
+  assert.equal(series.get(rows[0].date).large,null);
+  assert.deepEqual(series.get(rows[1].date),{observations:2,large:null,small:null,commercial:null});
+  assert.equal(chartValue(rows[1],rows[0],'large','index',true,series),null);
+  for(const window of [1,0,-3,2.5])assert.throws(()=>cotIndexSeries(rows,window),RangeError);
+});
+test('weekly index changes use consecutive rolling indices, including when an old extreme rolls out',()=>{
+  const rows=[record('2023-01-03',100,0),record('2023-01-10',100,10),record('2023-01-17',100,5),record('2023-01-24',100,5)];
+  const series=cotIndexSeries(rows,3);
+  assert.equal(chartValue(rows[2],rows[1],'large','index',false,series),50);
+  assert.equal(chartValue(rows[2],rows[1],'large','index',true,series),-50);
+  assert.equal(chartValue(rows[3],rows[2],'large','index',false,series),0);
+  assert.equal(chartValue(rows[3],rows[2],'large','index',true,series),-50);
+  assert.equal(chartValue(rows[0],null,'large','index',true,series),null);
+});
+test('changing the visible range does not renormalize the index',()=>{
+  const rows=[record('2023-01-03',100,0),record('2023-01-10',100,10),record('2023-01-17',100,5)];
+  const series=cotIndexSeries(rows,3);
+  const visible=rangeRecords(rows,'1w','2023-01-17');
+  assert.equal(visible.length,2);
+  assert.equal(chartValue(visible[1],visible[0],'large','index',false,series),50);
+  assert.equal(cotIndexSeries(visible,3).get('2023-01-17').large,0);
+});
 test('percent change is difference in share, not delta divided by current OI',()=>{
   const previous=record('2023-01-03',100,20), now=record('2023-01-10',200,30,10);
   assert.equal(netPercent(previous,'large'),20);

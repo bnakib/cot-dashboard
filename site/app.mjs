@@ -5,7 +5,28 @@ export const GROUPS = [
   {id:'commercial', label:'Commercials', official:'Commercial', color:'#cf8585'}
 ];
 export function netPercent(record, group) { return record.openInterest ? record[group].net / record.openInterest * 100 : null; }
-export function chartValue(record, previous, group, unit, changes=false) {
+export function cotIndexSeries(records, lookback=52) {
+  if (!Number.isInteger(lookback)||lookback<2)throw new RangeError('COT index lookback must be at least two reports');
+  const series=new Map();
+  records.forEach((record,i)=>{
+    const window=records.slice(Math.max(0,i+1-lookback),i+1);
+    const values={observations:window.length};
+    for(const group of GROUPS) {
+      const positions=window.map(r=>r[group.id].net);
+      const low=Math.min(...positions),high=Math.max(...positions);
+      values[group.id]=high===low?null:(record[group.id].net-low)/(high-low)*100;
+    }
+    series.set(record.date,values);
+  });
+  return series;
+}
+export function chartValue(record, previous, group, unit, changes=false, indexValues=null) {
+  if(unit==='index') {
+    const current=indexValues?.get(record.date)?.[group]??null;
+    if(!changes)return current;
+    const before=previous?indexValues?.get(previous.date)?.[group]??null:null;
+    return current===null||before===null?null:current-before;
+  }
   if (!changes) return unit === 'percent' ? netPercent(record, group) : record[group].net;
   if (!record[group].change || !previous) return null;
   if (unit === 'percent') {
@@ -41,7 +62,7 @@ export function csvForMarket(market) {
 
 if (typeof document !== 'undefined') {
   const $ = id => document.getElementById(id);
-  const state = {index:null, market:null, code:null, date:null, range:'3m', unit:'contracts', visible:new Set(GROUPS.map(g=>g.id)), cache:new Map(), request:0};
+  const state = {index:null, market:null, code:null, date:null, range:'3m', unit:'index', lookback:52, indexValues:new Map(), visible:new Set(GROUPS.map(g=>g.id)), cache:new Map(), request:0};
   const fmt = new Intl.NumberFormat('en-US');
   const signed = n => n == null ? '—' : (n>0?'+':n<0?'−':'')+fmt.format(Math.abs(n));
   const cls = n => n>0?'up':n<0?'down':'neutral';
@@ -100,6 +121,7 @@ if (typeof document !== 'undefined') {
       if(request!==state.request)return;
       if(!market.records?.length)throw new Error('This market has no observations.');
       state.cache.set(code,market); state.market=market; state.code=code;
+      state.indexValues=cotIndexSeries(market.records,state.lookback);
       state.date=market.records.at(-1).date;storage.set('cot-market',code);
       $('reportDate').replaceChildren(...market.records.toReversed().map(r=>{const o=document.createElement('option');o.value=r.date;o.textContent=prettyDate(r.date);return o;}));
       const info=marketInfo(market);
@@ -123,13 +145,20 @@ if (typeof document !== 'undefined') {
     if(old)notices.push(`This market’s latest observation is ${prettyDate(state.market.records.at(-1).date)}. The dataset contains newer reports for other markets.`);
     if(history)notices.push(`Viewing a historical report from ${prettyDate(r.date)}. Select the most recent date to return to current positioning.`);
     if(r.roundingDifferences)notices.push(roundingNotice(r));
+    if(state.unit==='index') {
+      const values=state.indexValues.get(r.date);
+      if(values.observations<state.lookback)notices.push(`COT index uses ${values.observations} of the requested ${state.lookback} reports available in this market’s history since 2023.`);
+      if(GROUPS.some(g=>values[g.id]===null))notices.push('A group’s COT index is unavailable when its net positions do not vary within the lookback window.');
+    }
     $('notice').hidden=!notices.length;
     $('notice').textContent=notices.join(' ');
     $('openInterest').textContent=fmt.format(r.openInterest);
     $('oiChange').textContent=previous?signed(r.openInterest-previous.openInterest)+' vs previous report':'No prior observation';
     $('positionRows').innerHTML=GROUPS.map(g=>`<tr><td><span class="table-dot" style="--group:${g.color}"></span>${g.label}<small>${g.official}</small></td><td>${fmt.format(r[g.id].long)}</td><td class="${cls(r[g.id].change?.long)}">${signed(r[g.id].change?.long)}</td><td>${fmt.format(r[g.id].short)}</td><td class="${cls(r[g.id].change?.short)}">${signed(r[g.id].change?.short)}</td><td>${signed(r[g.id].net)}</td><td class="${cls(r[g.id].change?.net)}">${signed(r[g.id].change?.net)}</td></tr>`).join('');
     $('spreading').textContent=`Non-commercial spreading: ${fmt.format(r.spreading)} contracts. Spreading is balanced exposure excluded from directional net positions and included on each side when reconciling open interest. Green/red changes mean an increase/decrease, not a buy/sell recommendation.`;
-    $('changeUnit').textContent=state.unit==='percent'?'Change in net share of open interest · percentage points':'Net contracts added or reduced';
+    $('positionUnit').textContent=state.unit==='index'?`COT index · 0% = lowest net position; 100% = highest in the last ${state.lookback} reports`:state.unit==='percent'?'Net positions as % of open interest · Above zero: net long; below zero: net short':'Net contracts · Above zero: net long; below zero: net short';
+    $('changeUnit').textContent=state.unit==='index'?'Change in COT index from the previous report · index points':state.unit==='percent'?'Change in net share of open interest · percentage points':'Net contracts added or reduced';
+    $('indexWindowField').hidden=state.unit!=='index';
     $('legend').innerHTML=GROUPS.map(g=>`<button data-group="${g.id}" class="${state.visible.has(g.id)?'':'off'}" aria-pressed="${state.visible.has(g.id)}"><span class="swatch" style="--group:${g.color}"></span>${g.label}</button>`).join('');
     $('legend').querySelectorAll('button').forEach(b=>b.onclick=()=>{
       if(state.visible.has(b.dataset.group)){if(state.visible.size===1)return;state.visible.delete(b.dataset.group);}else state.visible.add(b.dataset.group);
@@ -148,13 +177,15 @@ if (typeof document !== 'undefined') {
     const x=d=>left+(Date.parse(d+'T00:00:00Z')-minX)/(maxX-minX)*w;
     const all=state.market.records, byDate=new Map(all.map((r,i)=>[r.date,all[i-1]]));
     const series=GROUPS.filter(g=>state.visible.has(g.id));
-    const value=(r,g)=>chartValue(r,byDate.get(r.date),g.id,state.unit,changes);
+    const value=(r,g)=>chartValue(r,byDate.get(r.date),g.id,state.unit,changes,state.indexValues);
     const values=records.flatMap(r=>series.map(g=>value(r,g))).filter(v=>v!==null);
     let low=Math.min(0,...values),high=Math.max(0,...values);
-    if(low===high){low=-1;high=1;}const pad=(high-low)*.12;low-=pad;high+=pad;
+    if(state.unit==='index'&&!changes){low=0;high=100;}
+    else {if(low===high){low=-1;high=1;}const pad=(high-low)*.12;low-=pad;high+=pad;}
     const y=v=>top+(high-v)/(high-low)*h;
-    const tick=n=>state.unit==='percent'?n.toFixed(1)+(changes?' pp':'%'):Math.abs(n)>=1e6?(n/1e6).toFixed(1)+'M':Math.abs(n)>=1e3?(n/1e3).toFixed(0)+'k':n.toFixed(0);
-    let svg=`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${width} ${height}" role="img" aria-label="${changes?'Change in net positions':'Net positions'} from ${escape(records[0].date)} through ${escape(records.at(-1).date)}"><title>${changes?'Change in net positions':'Net positions'}; use the report selector for exact accessible values</title>`;
+    const tick=n=>state.unit==='index'?n.toFixed(changes?1:0)+(changes?' pts':'%'):state.unit==='percent'?n.toFixed(1)+(changes?' pp':'%'):Math.abs(n)>=1e6?(n/1e6).toFixed(1)+'M':Math.abs(n)>=1e3?(n/1e3).toFixed(0)+'k':n.toFixed(0);
+    const chartLabel=state.unit==='index'?(changes?'Change in COT index':'COT index'):(changes?'Change in net positions':'Net positions');
+    let svg=`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${width} ${height}" role="img" aria-label="${chartLabel} from ${escape(records[0].date)} through ${escape(records.at(-1).date)}"><title>${chartLabel}; use the report selector for exact accessible values</title>`;
     for(let i=0;i<=4;i++){const v=low+(high-low)*i/4;svg+=`<line class="svg-grid" x1="${left}" x2="${width-right}" y1="${y(v)}" y2="${y(v)}"/><text class="svg-axis" text-anchor="end" x="${left-10}" y="${y(v)+4}">${tick(v)}</text>`;}
     svg+=`<line class="svg-zero" x1="${left}" x2="${width-right}" y1="${y(0)}" y2="${y(0)}"/>`;
     const tickCount=Math.min(width<500?3:6,records.length);
@@ -180,8 +211,8 @@ if (typeof document !== 'undefined') {
     function nearest(event){const rect=target.querySelector('svg').getBoundingClientRect();const pos=(event.clientX-rect.left)/rect.width*width;return records.reduce((best,r)=>Math.abs(x(r.date)-pos)<Math.abs(x(best.date)-pos)?r:best,records[0]);}
     overlay.onpointermove=event=>{
       const r=nearest(event);const tooltip=$('tooltip');
-      const number=v=>v===null?'—':state.unit==='percent'?(v>0?'+':v<0?'−':'')+Math.abs(v).toFixed(2)+(changes?' pp':'%'):signed(v);
-      tooltip.innerHTML=`<strong>${prettyDate(r.date)}</strong><small>${changes?'Change versus '+(r.previousDate?prettyDate(r.previousDate):'no prior report'):'Net positioning'}${changes&&r.gapDays!==7&&r.gapDays?' · '+r.gapDays+'-day gap':''}</small>`+series.map(g=>`<div class="tip-row"><span style="color:${g.color}">${g.label}</span><b>${number(value(r,g))}</b></div>`).join('');
+      const number=v=>v===null?'—':state.unit==='index'?(changes?(v>0?'+':v<0?'−':'')+Math.abs(v).toFixed(2)+' pts':v.toFixed(2)+'%'):state.unit==='percent'?(v>0?'+':v<0?'−':'')+Math.abs(v).toFixed(2)+(changes?' pp':'%'):signed(v);
+      tooltip.innerHTML=`<strong>${prettyDate(r.date)}</strong><small>${changes?'Change versus '+(r.previousDate?prettyDate(r.previousDate):'no prior report'):state.unit==='index'?`COT index · ${state.indexValues.get(r.date).observations}-report window`:'Net positioning'}${changes&&r.gapDays!==7&&r.gapDays?' · '+r.gapDays+'-day gap':''}</small>`+series.map(g=>`<div class="tip-row"><span style="color:${g.color}">${g.label}</span><b>${number(value(r,g))}</b></div>`).join('');
       tooltip.hidden=false;
       tooltip.style.left=Math.max(8,Math.min(event.clientX+15,innerWidth-tooltip.offsetWidth-12))+'px';
       tooltip.style.top=Math.max(8,Math.min(event.clientY+15,innerHeight-tooltip.offsetHeight-12))+'px';
@@ -195,6 +226,7 @@ if (typeof document !== 'undefined') {
   $('reportDate').onchange=()=>{state.date=$('reportDate').value;render();};
   $('latestReport').onclick=()=>{state.date=state.market.records.at(-1).date;render();};
   $('unit').onchange=()=>{state.unit=$('unit').value;render();};
+  $('indexWindow').onchange=()=>{state.lookback=Number($('indexWindow').value);if(state.market)state.indexValues=cotIndexSeries(state.market.records,state.lookback);render();};
   document.querySelectorAll('[data-range]').forEach(b=>b.onclick=()=>{state.range=b.dataset.range;document.querySelectorAll('[data-range]').forEach(v=>{const selected=v===b;v.classList.toggle('selected',selected);v.setAttribute('aria-pressed',String(selected));});render();});
   let resizeTimer;window.addEventListener('resize',()=>{clearTimeout(resizeTimer);resizeTimer=setTimeout(()=>{if(!$('dashboard').hidden)render();},150);});
   (async()=>{
