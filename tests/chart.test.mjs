@@ -1,10 +1,37 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {GROUPS, netPercent, chartValue, rangeRecords, csvForMarket, roundingNotice, cotIndexSeries} from '../site/app.mjs';
-import {marketInfo, matchingMarkets} from '../site/markets.mjs';
+import {GROUPS, netPercent, chartValue, rangeRecords, csvForMarket, roundingNotice, cotIndexSeries, indexPercent, spreadEndLabels} from '../site/app.mjs';
+import {marketInfo, matchingMarkets, QUICK_MARKETS, FUTURES} from '../site/markets.mjs';
 function record(date,oi,net,change=null) {
   return {date,openInterest:oi,spreading:10,...Object.fromEntries(GROUPS.map(g=>[g.id,{long:40,short:20,net,change:change===null?null:{long:5,short:-2,net:change}}]))};
 }
+test('favorite ticker order maps to distinct reports, including E-mini Dow and Mexican peso',()=>{
+  assert.deepEqual(QUICK_MARKETS.map(code=>FUTURES[code][0]),['ES','NQ','RTY','YM','GC','SI','PA','PL','HG','CL','NG','HO','RB','DX','6A','6B','6C','6E','6J','6M','6S','VX','ZB','ZC','ZL','ZM','ZO','ZS','ZW']);
+  assert.equal(new Set(QUICK_MARKETS).size,29);
+  const index={latestDate:'2026-10-06',markets:[
+    {code:'124603',name:'DJIA x $5 - CHICAGO BOARD OF TRADE',latestDate:'2026-10-06'},
+    {code:'12460+',name:'DJIA Consolidated - CHICAGO BOARD OF TRADE',latestDate:'2026-10-06'},
+    {code:'095741',name:'MEXICAN PESO - CHICAGO MERCANTILE EXCHANGE',latestDate:'2026-10-06'}
+  ]};
+  assert.deepEqual(matchingMarkets(index,{query:'YM'}).map(m=>m.code),['124603']);
+  assert.deepEqual(matchingMarkets(index,{query:'6M'}).map(m=>m.code),['095741']);
+});
+test('index labels retain zero and hundred percent and leave unavailable values blank',()=>{
+  assert.equal(indexPercent(0),'0.0%');assert.equal(indexPercent(100),'100.0%');
+  assert.equal(indexPercent(75.555),'75.6%');
+  for(const unavailable of [null,undefined,NaN,Infinity])assert.equal(indexPercent(unavailable),'—');
+});
+test('line-end labels separate coincident values at both boundaries without moving data points',()=>{
+  for(const y of [20,172,325]){
+    const original=['large','small','commercial'].map(id=>({id,y}));
+    const labels=spreadEndLabels(original,28,320);
+    assert.equal(labels.length,3);
+    assert(labels[0].labelY>=28);assert(labels.at(-1).labelY<=320);
+    labels.forEach((label,i)=>{assert.equal(label.y,y);if(i)assert(label.labelY-labels[i-1].labelY>=18);});
+    assert(original.every(label=>!('labelY' in label)));
+  }
+  assert.deepEqual(spreadEndLabels([],28,320),[]);
+});
 test('COT index places signed net positions at their historical low, high, and midpoint',()=>{
   const rows=[record('2023-01-03',100,-20),record('2023-01-10',100,20),record('2023-01-17',100,0),record('2023-01-24',100,-20)];
   const series=cotIndexSeries(rows,3);

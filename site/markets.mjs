@@ -34,12 +34,14 @@ export const FUTURES = {
   '13874A':['ES','S&P 500','CME','Financial'],
   '209742':['NQ','Nasdaq 100','CME','Financial'],
   '239742':['RTY','Russell 2000','CME','Financial'],
+  '124603':['YM','E-mini Dow','CBOT','Financial'],
   '13874U':['MES','Micro S&P 500','CME','Financial'],
   '209747':['MNQ','Micro Nasdaq 100','CME','Financial'],
   '239747':['M2K','Micro Russell 2000','CME','Financial'],
   '099741':['6E','Euro','CME','Financial'],
   '096742':['6B','British pound','CME','Financial'],
   '097741':['6J','Japanese yen','CME','Financial'],
+  '095741':['6M','Mexican peso','CME','Financial'],
   '090741':['6C','Canadian dollar','CME','Financial'],
   '232741':['6A','Australian dollar','CME','Financial'],
   '092741':['6S','Swiss franc','CME','Financial'],
@@ -56,7 +58,7 @@ export const FUTURES = {
   '146022':['MET','Micro ether','CME','Financial'],
   '1170E1':['VX','VIX','CFE','Financial']
 };
-export const QUICK_MARKETS = ['067651','023651','088691','084691','085692','002602','001602','005602','083731','13874A','209742'];
+export const QUICK_MARKETS = ['13874A','209742','239742','124603','088691','084691','075651','076651','085692','067651','023651','022651','111659','098662','232741','096742','090741','099741','097741','095741','092741','1170E1','020601','002602','007601','026603','004603','005602','001602'];
 export function marketInfo(market) {
   const mapped=FUTURES[market.code];
   if(mapped) {
