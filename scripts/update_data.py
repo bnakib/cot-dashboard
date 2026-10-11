@@ -21,6 +21,8 @@ API = 'https://publicreporting.cftc.gov/resource/6dca-aqww.json'
 SOURCE = 'https://publicreporting.cftc.gov/d/6dca-aqww'
 START = date(2023, 1, 1)
 GROUPS = {'large': 'noncomm', 'small': 'nonrept', 'commercial': 'comm'}
+# A fixed contract bound, never a percentage that grows with market size.
+CONSOLIDATED_ROUNDING_TOLERANCE = 3
 
 def key(value):
     return re.sub(r'[^a-z0-9]', '', value.lower())
@@ -68,12 +70,18 @@ def normalize(row):
         long = number(field(row, f'{prefix}_positions_long_all', f'{labels[group]} Positions-Long (All)'))
         short = number(field(row, f'{prefix}_positions_short_all', f'{labels[group]} Positions-Short (All)'))
         record[group] = {'long': long, 'short': short, 'net': long - short}
+    tolerance = CONSOLIDATED_ROUNDING_TOLERANCE if code.endswith('+') else 0
+    differences = {}
     for side in ('long', 'short'):
         total = sum(record[g][side] for g in GROUPS) + spread
-        if total != oi:
-            raise ValueError(f'{code} {day}: {side} total {total} does not equal open interest {oi}')
-    if sum(record[g]['net'] for g in GROUPS) != 0:
-        raise ValueError(f'{code} {day}: net positions do not balance')
+        differences[side] = total - oi
+        if abs(differences[side]) > tolerance:
+            raise ValueError(f'{code} {day}: {side} total {total} differs from open interest {oi} by {differences[side]} (tolerance {tolerance})')
+    differences['net'] = sum(record[g]['net'] for g in GROUPS)
+    if abs(differences['net']) > tolerance:
+        raise ValueError(f'{code} {day}: net positions differ from zero by {differences["net"]} (tolerance {tolerance})')
+    if any(differences.values()):
+        record['roundingDifferences'] = differences
     return code, name, record
 
 def request(url):
@@ -151,6 +159,8 @@ def dumps(value):
 def publish(markets, target, source):
     latest = max(m['records'][-1]['date'] for m in markets.values())
     count = sum(len(m['records']) for m in markets.values())
+    rounding_count = sum('roundingDifferences' in r for m in markets.values() for r in m['records'])
+    print(f'Validation: {rounding_count} observations flagged for consolidated rounding (at most {CONSOLIDATED_ROUNDING_TOLERANCE} contracts per side and net); official counts preserved')
     old_path = target / 'index.json'
     old = json.loads(old_path.read_text()) if old_path.exists() else None
     # Refuse a suspiciously truncated full-history response.
@@ -160,7 +170,7 @@ def publish(markets, target, source):
     payloads = {f'{code}.json': dumps(market) for code, market in markets.items()}
     checksum = hashlib.sha256(''.join(payloads[n] for n in sorted(payloads)).encode()).hexdigest()
     index = {'schemaVersion': 1, 'reportType': 'Legacy Futures Only', 'sourceUrl': SOURCE, 'retrievalMethod': source,
-             'startDate': START.isoformat(), 'latestDate': latest, 'recordCount': count, 'checksum': checksum,
+             'startDate': START.isoformat(), 'latestDate': latest, 'recordCount': count, 'roundingRecordCount': rounding_count, 'checksum': checksum,
              'updatedAt': datetime.now(timezone.utc).isoformat(),
              'markets': [{'code': m['code'], 'name': m['name'], 'category': m['category'], 'firstDate': m['records'][0]['date'],
                           'latestDate': m['records'][-1]['date'], 'count': len(m['records'])} for m in sorted(markets.values(), key=lambda m: m['name'])]}
