@@ -57,7 +57,7 @@ def normalize(row):
     if day < START:
         return None
     code = str(field(row, 'cftc_contract_market_code')).strip()
-    if not re.fullmatch(r'[A-Za-z0-9]+', code):
+    if not re.fullmatch(r'[A-Za-z0-9+]+', code):
         raise ValueError(f'Unsafe market code: {code}')
     name = str(field(row, 'market_and_exchange_names')).strip()
     oi = number(field(row, 'open_interest_all'))
