@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {GROUPS, netPercent, chartValue, rangeRecords, csvForMarket, roundingNotice} from '../site/app.mjs';
+import {marketInfo, matchingMarkets} from '../site/markets.mjs';
 function record(date,oi,net,change=null) {
   return {date,openInterest:oi,spreading:10,...Object.fromEntries(GROUPS.map(g=>[g.id,{long:40,short:20,net,change:change===null?null:{long:5,short:-2,net:change}}]))};
 }
@@ -20,6 +21,35 @@ test('date filter excludes reports after the selected historical report',()=>{
   const rows=['2023-01-03','2023-06-06','2023-09-05','2023-10-03'].map(d=>record(d,100,20));
   assert.deepEqual(rangeRecords(rows,'3m','2023-09-05').map(r=>r.date),['2023-06-06','2023-09-05']);
   assert.equal(rangeRecords(rows,'all','2023-09-05').length,3);
+});
+test('week includes the prior weekly report and never invents missing observations',()=>{
+  const rows=['2026-09-22','2026-09-29','2026-10-06','2026-10-13'].map(d=>record(d,100,20));
+  assert.deepEqual(rangeRecords(rows,'1w','2026-10-06').map(r=>r.date),['2026-09-29','2026-10-06']);
+  assert.deepEqual(rangeRecords([rows[0],rows[2]],'1w','2026-10-06').map(r=>r.date),['2026-10-06']);
+});
+test('month and year windows clamp at short months and leap years',()=>{
+  const rows=['2023-02-27','2023-02-28','2023-03-01','2023-03-31','2023-04-01'].map(d=>record(d,100,20));
+  assert.deepEqual(rangeRecords(rows,'1m','2023-03-31').map(r=>r.date),['2023-02-28','2023-03-01','2023-03-31']);
+  assert.deepEqual(rangeRecords(rows,'1y','2024-02-29').map(r=>r.date),['2023-02-28','2023-03-01','2023-03-31','2023-04-01']);
+});
+test('ticker search identifies exact CFTC markets and corrects mapped sectors',()=>{
+  const index={latestDate:'2026-10-06',markets:[
+    {code:'067651',name:'WTI-PHYSICAL - NEW YORK MERCANTILE EXCHANGE',category:'Other',latestDate:'2026-10-06'},
+    {code:'088691',name:'GOLD - COMMODITY EXCHANGE INC.',category:'Metals',latestDate:'2026-10-06'},
+    {code:'023651',name:'NAT GAS NYME - NEW YORK MERCANTILE EXCHANGE',category:'Energy',latestDate:'2026-10-06'},
+    {code:'058643',name:'RANDOM LENGTH LUMBER - CHICAGO MERCANTILE EXCHANGE',category:'Agriculture',latestDate:'2023-04-18'},
+    {code:'13874+',name:'S&P 500 Consolidated - CHICAGO MERCANTILE EXCHANGE',category:'Financial',latestDate:'2026-10-06'}
+  ]};
+  assert.equal(marketInfo(index.markets[0]).label,'CL · WTI crude oil');
+  assert.deepEqual(matchingMarkets(index,{query:' cl ',category:'Energy'}).map(m=>m.code),['067651']);
+  assert.deepEqual(matchingMarkets(index,{query:'gold'}).map(m=>m.code),['088691']);
+  assert.deepEqual(matchingMarkets(index,{query:'NG'}).map(m=>m.code),['023651']);
+  assert.equal(matchingMarkets(index).length,3);
+  assert.equal(matchingMarkets(index,{mainOnly:false}).length,4);
+  assert.equal(matchingMarkets(index,{activeOnly:false}).length,4);
+  assert.equal(marketInfo(index.markets[4]).ticker,null);
+  assert.match(marketInfo(index.markets[4]).label,/Consolidated/);
+  assert.deepEqual(matchingMarkets(index,{query:'13874+',mainOnly:false}).map(m=>m.code),['13874+']);
 });
 test('CSV includes raw long, short and net changes and leaves missing comparisons empty',()=>{
   const csv=csvForMarket({records:[record('2023-01-03',100,20),record('2023-01-10',100,27,7)]});

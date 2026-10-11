@@ -1,3 +1,4 @@
+import {marketInfo, matchingMarkets, QUICK_MARKETS} from './markets.mjs';
 export const GROUPS = [
   {id:'large', label:'Large speculators', official:'Non-commercial', color:'#64d6c4'},
   {id:'small', label:'Small speculators', official:'Non-reportable', color:'#b6a0ff'},
@@ -15,10 +16,16 @@ export function chartValue(record, previous, group, unit, changes=false) {
 }
 export function rangeRecords(records, range, endDate) {
   const end = new Date(endDate + 'T00:00:00Z');
-  const months = {'3m':3,'6m':6,'1y':12}[range];
+  const months = {'1m':1,'3m':3,'6m':6,'1y':12}[range];
   const start = new Date(end);
-  if (months) start.setUTCMonth(start.getUTCMonth() - months);
-  return records.filter(r => r.date <= endDate && (!months || new Date(r.date + 'T00:00:00Z') >= start));
+  if(range==='1w')start.setUTCDate(start.getUTCDate()-7);
+  if (months) {
+    start.setUTCDate(1);
+    start.setUTCMonth(start.getUTCMonth() - months);
+    const lastDay=new Date(Date.UTC(start.getUTCFullYear(),start.getUTCMonth()+1,0)).getUTCDate();
+    start.setUTCDate(Math.min(end.getUTCDate(),lastDay));
+  }
+  return records.filter(r => r.date <= endDate && (!(months||range==='1w') || new Date(r.date + 'T00:00:00Z') >= start));
 }
 export function roundingNotice(record) {
   const d = record.roundingDifferences;
@@ -34,10 +41,9 @@ export function csvForMarket(market) {
 
 if (typeof document !== 'undefined') {
   const $ = id => document.getElementById(id);
-  const state = {index:null, market:null, code:null, date:null, range:'all', unit:'contracts', visible:new Set(GROUPS.map(g=>g.id)), cache:new Map(), request:0};
+  const state = {index:null, market:null, code:null, date:null, range:'3m', unit:'contracts', visible:new Set(GROUPS.map(g=>g.id)), cache:new Map(), request:0};
   const fmt = new Intl.NumberFormat('en-US');
   const signed = n => n == null ? '—' : (n>0?'+':n<0?'−':'')+fmt.format(Math.abs(n));
-  const pct = n => n == null ? '—' : (n>0?'+':n<0?'−':'')+Math.abs(n).toFixed(1)+'%';
   const cls = n => n>0?'up':n<0?'down':'neutral';
   const prettyDate = d => new Date(d+'T00:00:00Z').toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric',timeZone:'UTC'});
   const escape = s => String(s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
@@ -56,17 +62,34 @@ if (typeof document !== 'undefined') {
     if (!state.index?.markets?.length) return;
     const query=$('search').value.toLowerCase().trim();
     const category=$('category').value;
-    const markets=state.index.markets.filter(m=>(category==='all'||m.category===category)&&(!query||(m.name+' '+m.code).toLowerCase().includes(query))&&(!$('activeOnly').checked||m.latestDate===state.index.latestDate));
-    $('market').replaceChildren(...markets.map(m=>{const o=document.createElement('option');o.value=m.code;o.textContent=m.name;return o;}));
+    const markets=matchingMarkets(state.index,{query,category,mainOnly:$('coverage').value==='main',activeOnly:$('activeOnly').checked});
+    $('market').replaceChildren(...markets.map(m=>{const o=document.createElement('option');o.value=m.code;o.textContent=marketInfo(m).label;o.title=m.name;return o;}));
+    $('marketCount').textContent=`${markets.length} markets · Search by ticker or name. Use All CFTC markets for additional reports.`;
+    renderQuickMarkets();
     $('market').disabled=!markets.length;
     if (!markets.length) {
       state.request++; $('dashboard').hidden=true; $('loading').hidden=false;
-      $('loading').textContent='No matching markets. Try another search or include older markets.';
+      $('loading').textContent='No matching markets. Try All CFTC markets, another sector, or include older markets.';
       return;
     }
     const wanted=markets.find(m=>m.code===state.code)||markets.find(m=>m.code===storage.get('cot-market'))||markets.find(m=>m.code==='067651')||markets[0];
     $('market').value=wanted.code;
-    loadMarket(wanted.code);
+    if(wanted.code!==state.code||!state.market||$('dashboard').hidden)loadMarket(wanted.code);
+  }
+  function renderQuickMarkets() {
+    const markets=QUICK_MARKETS.map(code=>state.index.markets.find(m=>m.code===code)).filter(m=>m&&(!$('activeOnly').checked||m.latestDate===state.index.latestDate));
+    $('quickMarkets').innerHTML=markets.map(m=>{
+      const info=marketInfo(m);
+      return `<button type="button" data-market="${m.code}" class="ticker-button${m.code===state.code?' selected':''}" aria-pressed="${m.code===state.code}" title="${escape(m.name)}"><strong>${info.ticker}</strong><span>${info.name}</span></button>`;
+    }).join('');
+    $('quickMarkets').querySelectorAll('button').forEach(b=>b.onclick=()=>{
+      $('search').value='';$('category').value='all';$('coverage').value='main';
+      // Set the dropdown first; loadMarket owns the selected market state.
+      const markets=matchingMarkets(state.index,{activeOnly:$('activeOnly').checked});
+      $('market').replaceChildren(...markets.map(m=>{const o=document.createElement('option');o.value=m.code;o.textContent=marketInfo(m).label;return o;}));
+      $('market').disabled=false;$('market').value=b.dataset.market;loadMarket(b.dataset.market);
+      $('marketCount').textContent=`${markets.length} markets · Search by ticker or name. Use All CFTC markets for additional reports.`;
+    });
   }
   async function loadMarket(code) {
     const request=++state.request;
@@ -79,9 +102,12 @@ if (typeof document !== 'undefined') {
       state.cache.set(code,market); state.market=market; state.code=code;
       state.date=market.records.at(-1).date;storage.set('cot-market',code);
       $('reportDate').replaceChildren(...market.records.toReversed().map(r=>{const o=document.createElement('option');o.value=r.date;o.textContent=prettyDate(r.date);return o;}));
-      $('marketName').textContent=market.name;
-      $('marketSector').textContent=market.category+' · LEGACY FUTURES ONLY';
-      $('marketMeta').textContent=`CFTC market ${code} · ${market.records.length} observations · ${prettyDate(market.records[0].date)} onward`;
+      const info=marketInfo(market);
+      $('marketName').textContent=info.label;
+      $('marketSector').textContent=info.category+(info.exchange?' · '+info.exchange:'')+' · FUTURES ONLY';
+      $('marketMeta').textContent=`Weekly COT positioning · History from ${prettyDate(market.records[0].date)}`;
+      $('officialMarket').textContent=`${market.name} · CFTC ${code}`;
+      renderQuickMarkets();
       $('loading').hidden=true; $('dashboard').hidden=false; render();
     }catch(error){if(request===state.request)showError(error.message);}
   }
@@ -92,6 +118,7 @@ if (typeof document !== 'undefined') {
     $('comparison').textContent=previous?`Compared with ${prettyDate(previous.date)}${r.gapDays!==7?' · '+r.gapDays+'-day gap':''}`:'First available observation · No previous-report comparison';
     const old=state.market.records.at(-1).date!==state.index.latestDate;
     const history=r.date!==state.market.records.at(-1).date;
+    $('latestReport').hidden=!history;
     const notices=[];
     if(old)notices.push(`This market’s latest observation is ${prettyDate(state.market.records.at(-1).date)}. The dataset contains newer reports for other markets.`);
     if(history)notices.push(`Viewing a historical report from ${prettyDate(r.date)}. Select the most recent date to return to current positioning.`);
@@ -100,10 +127,6 @@ if (typeof document !== 'undefined') {
     $('notice').textContent=notices.join(' ');
     $('openInterest').textContent=fmt.format(r.openInterest);
     $('oiChange').textContent=previous?signed(r.openInterest-previous.openInterest)+' vs previous report':'No prior observation';
-    $('cards').innerHTML=GROUPS.map(g=>{
-      const change=r[g.id].change?.net;
-      return `<article class="card" style="--group:${g.color}"><div class="card-title">${g.label}<span class="badge">${r[g.id].net>0?'NET LONG':r[g.id].net<0?'NET SHORT':'BALANCED'}</span></div><strong>${signed(r[g.id].net)}</strong><p><span class="${cls(change)}">${signed(change)}</span> net change vs previous report</p><small>${pct(netPercent(r,g.id))} of open interest</small></article>`;
-    }).join('');
     $('positionRows').innerHTML=GROUPS.map(g=>`<tr><td><span class="table-dot" style="--group:${g.color}"></span>${g.label}<small>${g.official}</small></td><td>${fmt.format(r[g.id].long)}</td><td class="${cls(r[g.id].change?.long)}">${signed(r[g.id].change?.long)}</td><td>${fmt.format(r[g.id].short)}</td><td class="${cls(r[g.id].change?.short)}">${signed(r[g.id].change?.short)}</td><td>${signed(r[g.id].net)}</td><td class="${cls(r[g.id].change?.net)}">${signed(r[g.id].change?.net)}</td></tr>`).join('');
     $('spreading').textContent=`Non-commercial spreading: ${fmt.format(r.spreading)} contracts. Spreading is balanced exposure excluded from directional net positions and included on each side when reconciling open interest. Green/red changes mean an increase/decrease, not a buy/sell recommendation.`;
     $('changeUnit').textContent=state.unit==='percent'?'Change in net share of open interest · percentage points':'Net contracts added or reduced';
@@ -113,11 +136,13 @@ if (typeof document !== 'undefined') {
       render();
     });
     const visible=rangeRecords(records,state.range,state.date);
+    const rangeLabel={'1w':'Last week','1m':'Last month','3m':'Last quarter','1y':'Last year',all:'All history'}[state.range];
+    $('rangeSummary').textContent=`${rangeLabel} · ${prettyDate(visible[0].date)} – ${prettyDate(visible.at(-1).date)}${visible.length===1?' · Only one report in this window':''}`;
     drawChart('positionChart',visible,false); drawChart('changeChart',visible,true);
   }
   function drawChart(id, records, changes) {
-    const target=$(id), width=Math.max(600,target.clientWidth), height=changes?225:310;
-    const left=65,right=20,top=20,bottom=35,w=width-left-right,h=height-top-bottom;
+    const target=$(id), width=Math.max(280,target.clientWidth), height=changes?240:360;
+    const left=width<500?48:65,right=20,top=20,bottom=35,w=width-left-right,h=height-top-bottom;
     const dates=records.map(r=>Date.parse(r.date+'T00:00:00Z'));
     let minX=dates[0],maxX=dates.at(-1);if(minX===maxX){minX-=86400000*3;maxX+=86400000*3;}
     const x=d=>left+(Date.parse(d+'T00:00:00Z')-minX)/(maxX-minX)*w;
@@ -132,10 +157,10 @@ if (typeof document !== 'undefined') {
     let svg=`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${width} ${height}" role="img" aria-label="${changes?'Change in net positions':'Net positions'} from ${escape(records[0].date)} through ${escape(records.at(-1).date)}"><title>${changes?'Change in net positions':'Net positions'}; use the report selector for exact accessible values</title>`;
     for(let i=0;i<=4;i++){const v=low+(high-low)*i/4;svg+=`<line class="svg-grid" x1="${left}" x2="${width-right}" y1="${y(v)}" y2="${y(v)}"/><text class="svg-axis" text-anchor="end" x="${left-10}" y="${y(v)+4}">${tick(v)}</text>`;}
     svg+=`<line class="svg-zero" x1="${left}" x2="${width-right}" y1="${y(0)}" y2="${y(0)}"/>`;
-    const tickCount=Math.min(6,records.length);
+    const tickCount=Math.min(width<500?3:6,records.length);
     for(let i=0;i<tickCount;i++){
       const r=records[Math.round(i*(records.length-1)/Math.max(1,tickCount-1))];
-      const label=new Date(r.date+'T00:00:00Z').toLocaleDateString('en-US',{month:'short',year:'2-digit',timeZone:'UTC'});
+      const label=new Date(r.date+'T00:00:00Z').toLocaleDateString('en-US',{month:'short',...(['1w','1m','3m'].includes(state.range)?{day:'numeric'}:{year:'2-digit'}),timeZone:'UTC'});
       svg+=`<text class="svg-axis" text-anchor="middle" x="${x(r.date)}" y="${height-10}">${label}</text>`;
     }
     if(changes){
@@ -165,15 +190,12 @@ if (typeof document !== 'undefined') {
     overlay.onpointerleave=()=>{$('tooltip').hidden=true;document.querySelectorAll('.svg-cursor').forEach(c=>c.setAttribute('visibility','hidden'));};
     overlay.onclick=event=>{state.date=nearest(event).date;$('tooltip').hidden=true;render();};
   }
-  $('search').oninput=filterMarkets;$('category').onchange=filterMarkets;$('activeOnly').onchange=filterMarkets;
+  $('search').oninput=filterMarkets;$('category').onchange=filterMarkets;$('activeOnly').onchange=filterMarkets;$('coverage').onchange=filterMarkets;
   $('market').onchange=()=>loadMarket($('market').value);
   $('reportDate').onchange=()=>{state.date=$('reportDate').value;render();};
+  $('latestReport').onclick=()=>{state.date=state.market.records.at(-1).date;render();};
   $('unit').onchange=()=>{state.unit=$('unit').value;render();};
   document.querySelectorAll('[data-range]').forEach(b=>b.onclick=()=>{state.range=b.dataset.range;document.querySelectorAll('[data-range]').forEach(v=>{const selected=v===b;v.classList.toggle('selected',selected);v.setAttribute('aria-pressed',String(selected));});render();});
-  $('download').onclick=()=>{
-    const blob=new Blob([csvForMarket(state.market)],{type:'text/csv;charset=utf-8;'});const url=URL.createObjectURL(blob);
-    const a=document.createElement('a');a.href=url;a.download=`cot-${state.code}-2023-onward.csv`;a.click();setTimeout(()=>URL.revokeObjectURL(url),1000);
-  };
   let resizeTimer;window.addEventListener('resize',()=>{clearTimeout(resizeTimer);resizeTimer=setTimeout(()=>{if(!$('dashboard').hidden)render();},150);});
   (async()=>{
     try{
