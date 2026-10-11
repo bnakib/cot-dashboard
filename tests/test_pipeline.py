@@ -18,6 +18,13 @@ def row(day='2023-01-03', large_long=40, large_short=20):
             'comm_positions_long_all': str(80-large_long), 'comm_positions_short_all': str(80-large_short),
             'nonrept_positions_long_all': '10', 'nonrept_positions_short_all': '10'}
 
+def consolidated(long_difference=0, short_difference=0, day='2023-01-03'):
+    fixture = row(day)
+    fixture['cftc_contract_market_code'] = '06765+'
+    fixture['nonrept_positions_long_all'] = str(10 + long_difference)
+    fixture['nonrept_positions_short_all'] = str(10 + short_difference)
+    return fixture
+
 class PipelineTests(unittest.TestCase):
     def test_net_and_weekly_change(self):
         market = pipeline.build([row('2023-01-10', 45, 18), row()])['067651']
@@ -37,6 +44,50 @@ class PipelineTests(unittest.TestCase):
     def test_invalid_total_fails(self):
         bad = row(); bad['open_interest_all'] = '99'
         with self.assertRaises(ValueError): pipeline.build([bad])
+    def test_consolidated_rounding_preserves_counts_and_flags_signed_differences(self):
+        for long, short in [(1, 0), (-1, 0), (0, 3), (0, -3), (3, 3), (-3, -3), (1, -2)]:
+            with self.subTest(long=long, short=short):
+                fixture = consolidated(long, short)
+                original = copy.deepcopy(fixture)
+                record = pipeline.normalize(fixture)[2]
+                self.assertEqual(fixture, original)
+                self.assertEqual(record['openInterest'], 100)
+                self.assertEqual(record['spreading'], 10)
+                self.assertEqual(record['roundingDifferences'], {'long': long, 'short': short, 'net': long-short})
+                for group, prefix in pipeline.GROUPS.items():
+                    for side in ('long', 'short'):
+                        self.assertEqual(record[group][side], int(fixture[f'{prefix}_positions_{side}_all']))
+                    self.assertEqual(record[group]['net'], record[group]['long'] - record[group]['short'])
+    def test_balanced_consolidated_record_has_no_rounding_flag(self):
+        self.assertNotIn('roundingDifferences', pipeline.normalize(consolidated())[2])
+        self.assertNotIn('roundingDifferences', pipeline.normalize(row())[2])
+    def test_consolidated_large_discrepancies_rejected(self):
+        for long, short in [(4, 4), (-4, -4), (4, 0), (0, -4), (3, -1), (-1, 3)]:
+            with self.subTest(long=long, short=short), self.assertRaises(ValueError):
+                pipeline.build([consolidated(long, short)])
+    def test_nonconsolidated_markets_remain_exact(self):
+        for code in ['067651', '067+651']:
+            for difference in [-1, 1]:
+                fixture = consolidated(difference, difference)
+                fixture['cftc_contract_market_code'] = code
+                with self.subTest(code=code, difference=difference), self.assertRaises(ValueError):
+                    pipeline.normalize(fixture)
+    def test_rounding_changes_use_official_counts(self):
+        market = pipeline.build([consolidated(1, 0), consolidated(-2, -1, '2023-01-10')])['06765+']
+        self.assertEqual(market['records'][1]['small']['change'], {'long': -3, 'short': -1, 'net': -2})
+    def test_publish_rounding_metadata_and_preserve_data_on_large_error(self):
+        with tempfile.TemporaryDirectory() as directory:
+            target = Path(directory) / 'data'
+            markets = pipeline.build([consolidated(1, 0), consolidated(0, 0, '2023-01-10')])
+            pipeline.publish(markets, target, 'test')
+            index = json.loads((target / 'index.json').read_text())
+            self.assertEqual(index['roundingRecordCount'], 1)
+            stored = json.loads((target / '06765+.json').read_text())
+            self.assertEqual(stored['records'][0]['roundingDifferences'], {'long': 1, 'short': 0, 'net': 1})
+            before = {path.name: path.read_bytes() for path in target.iterdir()}
+            with self.assertRaises(ValueError):
+                pipeline.publish(pipeline.build([consolidated(4, 4)]), target, 'test')
+            self.assertEqual(before, {path.name: path.read_bytes() for path in target.iterdir()})
     def test_duplicate_conflict_fails(self):
         with self.assertRaises(ValueError): pipeline.build([row(), row(large_long=41)])
     def test_identical_duplicates_and_cutoff(self):
@@ -61,6 +112,8 @@ class PipelineTests(unittest.TestCase):
         self.assertEqual(pipeline.normalize(annual), pipeline.normalize(api))
         underscored = {k.replace(' ', '_'): v for k, v in annual.items()}
         self.assertEqual(pipeline.normalize(underscored), pipeline.normalize(api))
+        api = consolidated(1, -1)
+        self.assertEqual(pipeline.normalize({labels[k]: v for k, v in api.items()}), pipeline.normalize(api))
     def test_integral_decimal_counts(self):
         self.assertEqual(pipeline.number('1,000.0'), 1000)
         self.assertEqual(pipeline.number('0.00'), 0)

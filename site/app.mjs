@@ -20,9 +20,15 @@ export function rangeRecords(records, range, endDate) {
   if (months) start.setUTCMonth(start.getUTCMonth() - months);
   return records.filter(r => r.date <= endDate && (!months || new Date(r.date + 'T00:00:00Z') >= start));
 }
+export function roundingNotice(record) {
+  const d = record.roundingDifferences;
+  if (!d) return '';
+  const signed = n => (n > 0 ? '+' : '') + n;
+  return `Consolidated market rounding: long total minus open interest ${signed(d.long)}, short total minus open interest ${signed(d.short)}, net balance ${signed(d.net)} contracts. Official counts are preserved.`;
+}
 export function csvForMarket(market) {
-  const columns = ['date','open_interest','noncommercial_spreading', ...GROUPS.flatMap(g => ['long','short','net','change_long','change_short','change_net'].map(k => g.id+'_'+k))];
-  const rows = market.records.map(r => [r.date,r.openInterest,r.spreading,...GROUPS.flatMap(g => [r[g.id].long,r[g.id].short,r[g.id].net,r[g.id].change?.long ?? '',r[g.id].change?.short ?? '',r[g.id].change?.net ?? ''])]);
+  const columns = ['date','open_interest','noncommercial_spreading', ...GROUPS.flatMap(g => ['long','short','net','change_long','change_short','change_net'].map(k => g.id+'_'+k)), 'rounding_flag', 'long_total_minus_open_interest', 'short_total_minus_open_interest', 'net_balance'];
+  const rows = market.records.map(r => [r.date,r.openInterest,r.spreading,...GROUPS.flatMap(g => [r[g.id].long,r[g.id].short,r[g.id].net,r[g.id].change?.long ?? '',r[g.id].change?.short ?? '',r[g.id].change?.net ?? '']), Boolean(r.roundingDifferences), r.roundingDifferences?.long ?? 0, r.roundingDifferences?.short ?? 0, r.roundingDifferences?.net ?? 0]);
   return columns.join(',')+'\n'+rows.map(r => r.join(',')).join('\n')+'\n';
 }
 
@@ -86,8 +92,12 @@ if (typeof document !== 'undefined') {
     $('comparison').textContent=previous?`Compared with ${prettyDate(previous.date)}${r.gapDays!==7?' · '+r.gapDays+'-day gap':''}`:'First available observation · No previous-report comparison';
     const old=state.market.records.at(-1).date!==state.index.latestDate;
     const history=r.date!==state.market.records.at(-1).date;
-    $('notice').hidden=!old&&!history;
-    $('notice').textContent=old?`This market’s latest observation is ${prettyDate(state.market.records.at(-1).date)}. The dataset contains newer reports for other markets.`:`Viewing a historical report from ${prettyDate(r.date)}. Select the most recent date to return to current positioning.`;
+    const notices=[];
+    if(old)notices.push(`This market’s latest observation is ${prettyDate(state.market.records.at(-1).date)}. The dataset contains newer reports for other markets.`);
+    if(history)notices.push(`Viewing a historical report from ${prettyDate(r.date)}. Select the most recent date to return to current positioning.`);
+    if(r.roundingDifferences)notices.push(roundingNotice(r));
+    $('notice').hidden=!notices.length;
+    $('notice').textContent=notices.join(' ');
     $('openInterest').textContent=fmt.format(r.openInterest);
     $('oiChange').textContent=previous?signed(r.openInterest-previous.openInterest)+' vs previous report':'No prior observation';
     $('cards').innerHTML=GROUPS.map(g=>{

@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {GROUPS, netPercent, chartValue, rangeRecords, csvForMarket} from '../site/app.mjs';
+import {GROUPS, netPercent, chartValue, rangeRecords, csvForMarket, roundingNotice} from '../site/app.mjs';
 function record(date,oi,net,change=null) {
   return {date,openInterest:oi,spreading:10,...Object.fromEntries(GROUPS.map(g=>[g.id,{long:40,short:20,net,change:change===null?null:{long:5,short:-2,net:change}}]))};
 }
@@ -29,4 +29,23 @@ test('CSV includes raw long, short and net changes and leaves missing comparison
   assert.equal(first[headers.indexOf('large_change_net')],'');
   assert.equal(second[headers.indexOf('large_change_short')],'-2');
   assert.equal(second[headers.indexOf('large_change_net')],'7');
+});
+test('rounding notice and CSV expose signed discrepancies without altering counts',()=>{
+  const exact=record('2023-01-03',100,20), rounded=record('2023-01-10',100,20);
+  rounded.roundingDifferences={long:1,short:-1,net:2};
+  assert.equal(roundingNotice(exact),'');
+  assert.match(roundingNotice(rounded),/long total minus open interest \+1/);
+  assert.match(roundingNotice(rounded),/short total minus open interest -1/);
+  assert.match(roundingNotice(rounded),/net balance \+2/);
+  const lines=csvForMarket({records:[exact,rounded]}).trimEnd().split('\n').map(r=>r.split(','));
+  const [headers,first,second]=lines;
+  assert.equal(second[headers.indexOf('open_interest')],'100');
+  assert.equal(second[headers.indexOf('large_net')],'20');
+  assert.equal(second[headers.indexOf('rounding_flag')],'true');
+  assert.equal(first[headers.indexOf('rounding_flag')],'false');
+  assert.equal(second[headers.indexOf('long_total_minus_open_interest')],'1');
+  assert.equal(second[headers.indexOf('short_total_minus_open_interest')],'-1');
+  assert.equal(second[headers.indexOf('net_balance')],'2');
+  assert.equal(first.length,headers.length);
+  assert.equal(second.length,headers.length);
 });
