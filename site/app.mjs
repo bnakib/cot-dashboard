@@ -143,8 +143,10 @@ if (typeof document !== 'undefined') {
       const info=marketInfo(m),values=m.latestIndices?.[state.lookback];
       const title=values?`${values.observations} of ${state.lookback} requested reports`: 'Index unavailable';
       const commercial=indexPercent(values?.commercial,0),extreme=commercial==='0%'||commercial==='100%';
+      const roundedCommercial=Number.parseFloat(commercial);
+      const tickerClass=roundedCommercial>=85?'commercial-high':roundedCommercial<=15?'commercial-low':'';
       const ticker=escape(info.ticker||'CFTC '+m.code);
-      return `<tr><td><button type="button" class="market-link" data-market="${m.code}">${extreme?`<strong class="index-extreme ${commercial==='100%'?'commercial-high':'commercial-low'}">${ticker}</strong>`:ticker}<small>${escape(info.name)}</small></button></td><td class="${m.latestDate!==state.index.latestDate?'older-report':''}"><time datetime="${m.latestDate}">${prettyDate(m.latestDate)}</time></td>${GROUPS.map(g=>`<td style="color:${g.color}" title="${title}">${g.id==='commercial'&&extreme?`<strong class="index-extreme">${commercial}</strong>`:indexPercent(values?.[g.id],0)}</td>`).join('')}</tr>`;
+      return `<tr><td><button type="button" class="market-link" data-market="${m.code}"><span class="${tickerClass}">${extreme?`<strong class="index-extreme">${ticker}</strong>`:ticker}</span><small>${escape(info.name)}</small></button></td><td class="${m.latestDate!==state.index.latestDate?'older-report':''}"><time datetime="${m.latestDate}">${prettyDate(m.latestDate)}</time></td>${GROUPS.map(g=>`<td style="color:${g.color}" title="${title}">${g.id==='commercial'&&extreme?`<strong class="index-extreme">${commercial}</strong>`:indexPercent(values?.[g.id],0)}</td>`).join('')}</tr>`;
     }).join('');
     if(!markets.length)$('marketOverviewRows').innerHTML='<tr><td colspan="5">No matching markets. Try another ticker, name, or CFTC code.</td></tr>';
     $('marketOverviewRows').querySelectorAll('[data-market]').forEach(b=>b.onclick=async()=>{await selectMarket(b.dataset.market);if(!$('dashboard').hidden)$('marketName').scrollIntoView({behavior:'smooth',block:'start'});});
