@@ -20,7 +20,7 @@ export function cotIndexSeries(records, lookback=SIX_MONTH_LOOKBACK) {
   });
   return series;
 }
-export function indexPercent(value) { return Number.isFinite(value)?value.toFixed(1)+'%':'—'; }
+export function indexPercent(value, digits=1) { return Number.isFinite(value)?value.toFixed(digits)+'%':'—'; }
 export function spreadEndLabels(labels, minY, maxY, gap=18) {
   const placed=labels.map(label=>({...label})).sort((a,b)=>a.y-b.y);
   placed.forEach((label,i)=>{label.labelY=Math.max(minY,label.y,i?placed[i-1].labelY+gap:minY);});
@@ -114,8 +114,8 @@ if (typeof document !== 'undefined') {
       const info=marketInfo(m);
       const values=m.latestIndices?.[SIX_MONTH_LOOKBACK];
       const commercial=GROUPS.find(g=>g.id==='commercial');
-      const description=`Commercials: ${indexPercent(values?.commercial)} · 6-month lookback (${SIX_MONTH_LOOKBACK} reports)`;
-      return `<button type="button" data-market="${m.code}" class="ticker-button${m.code===state.code?' selected':''}" aria-pressed="${m.code===state.code}" aria-label="${escape(info.label+', '+prettyDate(m.latestDate)+', '+description)}" title="${escape(m.name+' · '+prettyDate(m.latestDate)+' · 6-month lookback ('+SIX_MONTH_LOOKBACK+' reports)'+(values?.observations<SIX_MONTH_LOOKBACK?' · '+values.observations+' available reports':''))}"><strong>${info.ticker}</strong><span class="ticker-name">${info.name}</span><span class="ticker-indices"><span style="color:${commercial.color}" data-group="commercial">Commercials <b>${indexPercent(values?.commercial)}</b></span></span>${m.latestDate!==state.index.latestDate?`<small class="older-report">${prettyDate(m.latestDate)}</small>`:''}</button>`;
+      const description=`Commercials: ${indexPercent(values?.commercial,0)} · 6-month lookback (${SIX_MONTH_LOOKBACK} reports)`;
+      return `<button type="button" data-market="${m.code}" class="ticker-button${m.code===state.code?' selected':''}" aria-pressed="${m.code===state.code}" aria-label="${escape(info.label+', '+prettyDate(m.latestDate)+', '+description)}" title="${escape(m.name+' · '+prettyDate(m.latestDate)+' · 6-month lookback ('+SIX_MONTH_LOOKBACK+' reports)'+(values?.observations<SIX_MONTH_LOOKBACK?' · '+values.observations+' available reports':''))}"><strong>${info.ticker}</strong><span class="ticker-name">${info.name}</span><span class="ticker-indices"><span style="color:${commercial.color}" data-group="commercial">Commercials <b>${indexPercent(values?.commercial,0)}</b></span></span>${m.latestDate!==state.index.latestDate?`<small class="older-report">${prettyDate(m.latestDate)}</small>`:''}</button>`;
     }).join('');
     $('quickMarkets').querySelectorAll('[data-market]').forEach(b=>b.onclick=()=>selectMarket(b.dataset.market));
   }
@@ -142,7 +142,9 @@ if (typeof document !== 'undefined') {
     $('marketOverviewRows').innerHTML=markets.map(m=>{
       const info=marketInfo(m),values=m.latestIndices?.[state.lookback];
       const title=values?`${values.observations} of ${state.lookback} requested reports`: 'Index unavailable';
-      return `<tr><td><button type="button" class="market-link" data-market="${m.code}">${escape(info.ticker||'CFTC '+m.code)}<small>${escape(info.name)}</small></button></td><td class="${m.latestDate!==state.index.latestDate?'older-report':''}"><time datetime="${m.latestDate}">${prettyDate(m.latestDate)}</time></td>${GROUPS.map(g=>`<td style="color:${g.color}" title="${title}">${indexPercent(values?.[g.id])}</td>`).join('')}</tr>`;
+      const commercial=indexPercent(values?.commercial,0),extreme=commercial==='0%'||commercial==='100%';
+      const ticker=escape(info.ticker||'CFTC '+m.code);
+      return `<tr><td><button type="button" class="market-link" data-market="${m.code}">${extreme?`<strong class="index-extreme">${ticker}</strong>`:ticker}<small>${escape(info.name)}</small></button></td><td class="${m.latestDate!==state.index.latestDate?'older-report':''}"><time datetime="${m.latestDate}">${prettyDate(m.latestDate)}</time></td>${GROUPS.map(g=>`<td style="color:${g.color}" title="${title}">${g.id==='commercial'&&extreme?`<strong class="index-extreme">${commercial}</strong>`:indexPercent(values?.[g.id],0)}</td>`).join('')}</tr>`;
     }).join('');
     if(!markets.length)$('marketOverviewRows').innerHTML='<tr><td colspan="5">No matching markets. Try another ticker, name, or CFTC code.</td></tr>';
     $('marketOverviewRows').querySelectorAll('[data-market]').forEach(b=>b.onclick=async()=>{await selectMarket(b.dataset.market);if(!$('dashboard').hidden)$('marketName').scrollIntoView({behavior:'smooth',block:'start'});});
