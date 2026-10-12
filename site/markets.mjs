@@ -60,7 +60,14 @@ export const FUTURES = {
   '1170E1':['VX','VIX','CFE','Financial']
 };
 export const QUICK_MARKETS = ['13874A','209742','239742','124603','088691','084691','075651','076651','085692','067651','023651','022651','111659','098662','232741','096742','090741','099741','097741','095741','092741','1170E1','020601','002602','007601','026603','004603','005602','001602'];
-const MAIN_OVERVIEW_EXCLUDED_TICKERS = new Set(['MES','MNQ','M2K','MGC','MBT','MET','LBS','SR3']);
+const MAIN_OVERVIEW_TICKERS = new Set([
+  'ES','NQ','RTY','YM','GC','SI','PA','PL','HG',
+  'BTC','ETH','CL','NG','HO','RB',
+  '6A','6B','6C','6E','6J','6M','6S','DX',
+  'VX','ZB','ZF','ZN','ZT',
+  'CC','CT','KC','LBR','OJ','SB','HE','LE',
+  'ZC','ZL','ZM','ZO','ZS','ZW'
+]);
 export function marketInfo(market) {
   const mapped=FUTURES[market.code];
   if(mapped) {
@@ -92,6 +99,6 @@ export function overviewMarkets(index,{query='',mainOnly=true,lookback=SIX_MONTH
     const value=market.latestIndices?.[lookback]?.commercial;
     return Number.isFinite(value)?value:-Infinity;
   };
-  return markets.filter(m=>!MAIN_OVERVIEW_EXCLUDED_TICKERS.has(marketInfo(m).ticker))
+  return markets.filter(m=>MAIN_OVERVIEW_TICKERS.has(marketInfo(m).ticker))
     .sort((a,b)=>commercial(b)-commercial(a)||marketInfo(a).label.localeCompare(marketInfo(b).label));
 }
